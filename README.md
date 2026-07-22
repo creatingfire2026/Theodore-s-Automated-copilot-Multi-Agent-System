@@ -81,7 +81,14 @@ Every morning the system executes the following sequence:
 ├── CONTRIBUTING.md
 ├── ROADMAP.md
 │
+├── .github/
+│   ├── pull_request_template.md
+│   └── ISSUE_TEMPLATE/
+│       ├── new-agent-proposal.md
+│       └── workflow-improvement.md
+│
 ├── agents/
+│   ├── orchestration-agent.md
 │   ├── financial-stability-agent.md
 │   ├── job-search-agent.md
 │   ├── development-tool-agent.md
@@ -93,6 +100,7 @@ Every morning the system executes the following sequence:
 │
 ├── templates/
 │   ├── copilot-studio-agent-template.md
+│   ├── excel-workbook-schema.md
 │   └── approval-pattern.md
 │
 └── diagrams/
