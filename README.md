@@ -32,23 +32,23 @@ The system runs daily, surfaces intelligent summaries, and routes decisions thro
 ## Multi-Agent Orchestration Diagram
 
 ```
-                    ┌──────────────────────────────┐
-                    │      Orchestration Agent      │
-                    │  (Daily Brief · Approvals)    │
-                    └────────────┬─────────────────┘
-                                 │
-           ┌─────────────────────┼─────────────────────┐
-           │                     │                     │
-           ▼                     ▼                     ▼                     ▼
-┌──────────────────┐  ┌───────────────────┐  ┌──────────────────────┐  ┌──────────────────┐
-│ Financial        │  │  Job-Search       │  │ Development Tool     │  │ Automation       │
-│ Stability Agent  │  │  Agent            │  │ Agent                │  │ Agent            │
-│                  │  │                   │  │                      │  │                  │
-│ • Cashflow       │  │ • Board scanner   │  │ • Toolchain health   │  │ • Run PA flows   │
-│ • Stability score│  │ • Skill matcher   │  │ • Lint & config check│  │ • Update dashbds │
-│ • Risk flags     │  │ • Draft apps      │  │ • Optimizations      │  │ • Notifications  │
-│ • Projections    │  │ • Rank opps       │  │ • Dependency audit   │  │ • Log outcomes   │
-└──────────────────┘  └───────────────────┘  └──────────────────────┘  └──────────────────┘
+                         ┌──────────────────────────────┐
+                         │      Orchestration Agent      │
+                         │  (Daily Brief · Approvals)    │
+                         └──────────────┬───────────────┘
+                                        │
+           ┌────────────────────────────┼────────────────────────────┐
+           │                            │                            │                            │
+           ▼                            ▼                            ▼                            ▼
+┌──────────────────┐       ┌───────────────────┐       ┌──────────────────────┐       ┌──────────────────┐
+│ Financial        │       │  Job-Search       │       │ Development Tool     │       │ Automation       │
+│ Stability Agent  │       │  Agent            │       │ Agent                │       │ Agent            │
+│                  │       │                   │       │                      │       │                  │
+│ • Cashflow       │       │ • Board scanner   │       │ • Toolchain health   │       │ • Run PA flows   │
+│ • Stability score│       │ • Skill matcher   │       │ • Lint & config check│       │ • Update dashbds │
+│ • Risk flags     │       │ • Draft apps      │       │ • Optimizations      │       │ • Notifications  │
+│ • Projections    │       │ • Rank opps       │       │ • Dependency audit   │       │ • Log outcomes   │
+└──────────────────┘       └───────────────────┘       └──────────────────────┘       └──────────────────┘
 ```
 
 ---
@@ -66,7 +66,7 @@ Every morning the system executes the following sequence:
    - ✅ **Actions Requiring Approval** — numbered list of pending decisions
 4. **Present** — Brief is delivered to Theodore (email / Teams / chat)
 5. **Await** — System waits for Yes/No responses (e.g., `1. Yes, 2. No, 3. Yes`)
-6. **Route** — Orchestration Agent executes approved items; logs declined ones
+6. **Route** — Orchestration Agent sends approved items to the Automation Agent for execution; logs declined ones
 7. **Log** — All decisions and outcomes are written to the audit log
 
 ---
