@@ -18,6 +18,10 @@ This document tracks the phased build-out of Theodore's Automated Copilot Multi-
 
 ## Phase 2 — Agent Implementation and Data Connection
 
+See [GETTING_STARTED.md](GETTING_STARTED.md) for the complete step-by-step guide.
+
+- [ ] Set up Excel Finance Workbook (using `/templates/excel-workbook-schema.md`)
+- [ ] Fill in skill profile (using `/templates/skill-profile-template.md` → save as `/agents/skill-profile.md`)
 - [ ] Build Financial Stability Agent in Copilot Studio
 - [ ] Connect Excel finance workbook and Power BI dataset to Financial Stability Agent
 - [ ] Build Job-Search Agent with board-scanning actions
@@ -25,6 +29,7 @@ This document tracks the phased build-out of Theodore's Automated Copilot Multi-
 - [ ] Build Automation Agent with Power Automate flow triggers
 - [ ] Implement Daily Brief workflow in Power Automate
 - [ ] Wire Orchestration Agent to all task agents
+- [ ] Connect Power BI dashboards and configure scheduled refresh
 
 ---
 

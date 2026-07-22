@@ -76,6 +76,7 @@ Every morning the system executes the following sequence:
 ```
 /
 ├── README.md                      ← This file
+├── GETTING_STARTED.md             ← Week-by-week Phase 2 build guide
 ├── .gitignore
 ├── LICENSE
 ├── CONTRIBUTING.md
@@ -101,6 +102,7 @@ Every morning the system executes the following sequence:
 ├── templates/
 │   ├── copilot-studio-agent-template.md
 │   ├── excel-workbook-schema.md
+│   ├── skill-profile-template.md  ← Fill in and save as /agents/skill-profile.md
 │   └── approval-pattern.md
 │
 └── diagrams/
@@ -112,9 +114,12 @@ Every morning the system executes the following sequence:
 
 ## Getting Started
 
-1. Fork or clone this repository
-2. Review the agent specs in `/agents`
-3. Follow the template in `/templates/copilot-studio-agent-template.md` to build each agent in Copilot Studio
+See **[GETTING_STARTED.md](GETTING_STARTED.md)** for a complete week-by-week Phase 2 build guide — from setting up the Excel Finance Workbook on Day 1 to running the full Daily Brief by the end of Week 5.
+
+Quick orientation:
+1. Review the agent specs in `/agents`
+2. Fill in your skill profile using `/templates/skill-profile-template.md`
+3. Follow `/templates/copilot-studio-agent-template.md` to build each agent in Copilot Studio
 4. Configure Power Automate flows using `/workflows/daily-brief-workflow.md`
 5. Connect Excel and Power BI data sources to the Financial Stability Agent
 6. Deploy and run the Daily Brief workflow
