@@ -1,0 +1,31 @@
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor folders
+.vscode/
+.idea/
+
+# Build, temp, and logs
+dist/
+build/
+temp/
+cache/
+*.log
+
+# Data files
+*.xlsx
+*.csv
+*.pbix
+*.bak
+*.old
+
+# Exported packages
+*.zip
+*.msapp
+*.json
+
+# Image exports
+*.png
+*.svg
