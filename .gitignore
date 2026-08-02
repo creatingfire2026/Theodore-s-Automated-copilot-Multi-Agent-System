@@ -14,18 +14,30 @@ temp/
 cache/
 *.log
 
-# Data files
+# Runtime telemetry and short-lived logs (not version-controlled)
+logs/
+telemetry/
+
+# Private data and secrets — NEVER commit these
 *.xlsx
-*.csv
 *.pbix
 *.bak
 *.old
+*.env
+.env.*
+secrets/
+private/
+credentials/
 
-# Exported packages
+# Exported app packages
 *.zip
 *.msapp
-*.json
 
-# Image exports
+# Safe files that CAN be committed:
+# *.json — allowed (test fixtures, config schemas, example data with fictional values)
+# *.csv  — allowed (test fixtures and example data with fictional values)
+# *.svg  — allowed (diagrams and vector exports)
+# Exception: secrets.json, credentials.json, *.private.json are covered by the secrets/ and *.env rules above
+
+# Image exports (generated artifacts — regenerate from source instead)
 *.png
-*.svg

@@ -1,10 +1,12 @@
 # Roadmap
 
-This document tracks the phased build-out of Theodore's Automated Copilot Multi-Agent System.
+This document tracks the phased build-out of the CreatingFire Agent System Lab.
 
 ---
 
-## Phase 1 — Architecture and Documentation ✅ Complete
+## Phase 1 — Conceptual Architecture and Test Design — In Validation
+
+The items below represent design work completed in the repository. They are **not** verified or proven until corresponding test cases in `/tests/` produce a passing result.
 
 - [x] Repository structure established
 - [x] README with purpose, agent types, orchestration diagram, and Daily Brief description
@@ -13,27 +15,37 @@ This document tracks the phased build-out of Theodore's Automated Copilot Multi-
 - [x] Reusable templates (`/templates`)
 - [x] Mermaid architecture and workflow diagrams (`/diagrams`)
 - [x] CONTRIBUTING and ROADMAP guides
+- [ ] **Simulation test 01 — Basic Daily Brief cycle — passing result recorded**
+- [ ] **Simulation test 02 — Missing response handling — passing result recorded**
+- [ ] **Simulation test 03 — Ambiguous approval handling — passing result recorded**
+- [ ] **Simulation test 04 — Duplicate execution guard — passing result recorded**
+- [ ] **Simulation test 05 — Sensitive-data protection — passing result recorded**
+
+Phase 1 is not considered complete until all five simulation tests have a passing result in `/tests/`.
 
 ---
 
 ## Phase 2 — Agent Implementation and Data Connection
 
-See [GETTING_STARTED.md](GETTING_STARTED.md) for the complete step-by-step guide.
+This phase begins only after Phase 1 simulation tests pass.
 
-- [ ] Set up Excel Finance Workbook (using `/templates/excel-workbook-schema.md`)
-- [ ] Fill in skill profile (using `/templates/skill-profile-template.md` → save as `/agents/skill-profile.md`)
-- [ ] Build Financial Stability Agent in Copilot Studio
-- [ ] Connect Excel finance workbook and Power BI dataset to Financial Stability Agent
+- [ ] Select implementation runtime (Microsoft 365 / Copilot Studio, or equivalent)
+- [ ] Set up financial data store using the schema in `/templates/excel-workbook-schema.md` — use fictional data only during initial wiring
+- [ ] Fill in skill profile using `/templates/skill-profile-template.md` — save privately, not in this repository
+- [ ] Build Financial Stability Agent (scoring formula marked experimental until test cases pass)
+- [ ] Connect financial data store to Financial Stability Agent
 - [ ] Build Job-Search Agent with board-scanning actions
 - [ ] Build Development Tool Agent with toolchain health checks
-- [ ] Build Automation Agent with Power Automate flow triggers
-- [ ] Implement Daily Brief workflow in Power Automate
+- [ ] Build Automation Agent with flow execution and audit logging
+- [ ] Implement Daily Brief workflow with the structured action record approval pattern
 - [ ] Wire Orchestration Agent to all task agents
-- [ ] Connect Power BI dashboards and configure scheduled refresh
+- [ ] Connect reporting dashboards and configure scheduled refresh
 
 ---
 
 ## Phase 3 — Additional Agents
+
+Each proposed agent must satisfy the justification criteria in the New Agent Proposal template before being added.
 
 - [ ] **Income Opportunity Agent** — surface freelance, contract, and passive income opportunities
 - [ ] **System Health Agent** — monitor infrastructure, services, and notification channels
@@ -43,7 +55,7 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for the complete step-by-step guide
 
 ## Phase 4 — Intelligence and Optimization
 
-- [ ] Improve stability scoring algorithm with weighted risk factors
+- [ ] Improve stability scoring algorithm — normalization, data requirements, and test cases must be defined first
 - [ ] Add anomaly detection to Financial Stability Agent (unusual spend, income drops)
 - [ ] Tune Job-Search Agent skill-matching with feedback loop from accepted/rejected applications
 - [ ] Automated recommendations engine — agents suggest actions proactively, not just reactively
@@ -52,6 +64,15 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for the complete step-by-step guide
 
 ## Phase 5 — Autonomy and Reduced Manual Approvals
 
+This phase requires all four pre-conditions to be met and documented before any approval scope reduction:
+
+**Pre-conditions (all required):**
+- [ ] Observability: every agent action logged with immutable action ID before execution
+- [ ] Rollback: documented undo procedure for at least one approved action class
+- [ ] Kill switch: defined and tested procedure to halt all autonomous execution immediately
+- [ ] Risk limits: explicit maximum cost, scope, and frequency limits per action class, tested
+
+**Scope reductions (only after pre-conditions are met):**
 - [ ] Define trusted-action thresholds — actions below a risk threshold execute automatically
 - [ ] Reduce the daily approval list to only high-impact or novel decisions
 - [ ] Introduce confidence scoring — agents self-report certainty; low-confidence items always escalate

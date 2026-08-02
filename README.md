@@ -1,20 +1,22 @@
-# Theodore's Automated Copilot Multi-Agent System
+# CreatingFire Agent System Lab
 
-A commanding Copilot-driven multi-agent system forged for stability, opportunity, and precision. Financial intelligence, job-seeking automation, and toolchain optimization unite under a disciplined orchestration core, empowering Theodore's digital ecosystem to rise, adapt, and endure — and scale with new and existing pioneers in the technology sector.
+An evidence-driven laboratory for designing, simulating, testing, and validating a sovereign AI-agent operating system.
+
+> **Status: Unverified — In Active Design and Simulation**
+> This repository is a laboratory and requirements scaffold. The architecture described here has not been deployed, tested end-to-end, or validated against real data. All agent logic, scoring formulas, and workflow patterns are **proposals under review**, not proven designs. No claim is made that the system is production-ready or that any component works as described until a passing test case is committed.
 
 ---
 
 ## Purpose
 
-This repository is a blueprint and scaffold for a **Copilot-driven multi-agent automation system** built on:
+This repository is an evidence-driven laboratory for:
 
-- **GitHub Copilot** — AI-assisted development and code review
-- **Copilot Studio** — custom agent authoring and orchestration
-- **Power Automate** — workflow automation and approvals
-- **Excel** — financial data input and modeling
-- **Power BI** — dashboards and reporting
+- **Designing** a multi-agent operating system that surfaces daily intelligence and routes human decisions
+- **Simulating** agent behavior with fictional data before any real infrastructure is connected
+- **Testing** each workflow, approval pattern, and scoring formula against defined pass criteria
+- **Validating** that human approval remains the execution authority at every consequential step
 
-The system runs daily, surfaces intelligent summaries, and routes decisions through a human-in-the-loop approval layer before taking any consequential action.
+The lab is **implementation-agnostic**. Microsoft 365, Copilot Studio, Power Automate, Excel, and Power BI are one possible implementation path, not mandatory foundations. Any orchestration runtime, spreadsheet, notification channel, or approval mechanism that satisfies the test criteria is acceptable.
 
 ---
 
@@ -23,7 +25,7 @@ The system runs daily, surfaces intelligent summaries, and routes decisions thro
 | Type | Role |
 |---|---|
 | **Orchestration Agent** | Coordinates all agents, collects summaries, builds the Daily Brief, routes approvals |
-| **Task Agent** | Executes a single repeatable action (e.g., update a spreadsheet, send a notification) |
+| **Task Agent** | Executes a single repeatable action (e.g., update a record, send a notification) |
 | **Analytical Agent** | Processes data, computes scores, detects patterns, and surfaces insights |
 | **Workflow Agent** | Drives multi-step automated flows with conditional logic and human checkpoints |
 
@@ -44,10 +46,11 @@ The system runs daily, surfaces intelligent summaries, and routes decisions thro
 │ Financial        │       │  Job-Search       │       │ Development Tool     │       │ Automation       │
 │ Stability Agent  │       │  Agent            │       │ Agent                │       │ Agent            │
 │                  │       │                   │       │                      │       │                  │
-│ • Cashflow       │       │ • Board scanner   │       │ • Toolchain health   │       │ • Run PA flows   │
-│ • Stability score│       │ • Skill matcher   │       │ • Lint & config check│       │ • Update dashbds │
+│ • Cashflow       │       │ • Board scanner   │       │ • Toolchain health   │       │ • Execute flows  │
+│ • Stability score│       │ • Skill matcher   │       │ • Lint & config check│       │ • Update records │
 │ • Risk flags     │       │ • Draft apps      │       │ • Optimizations      │       │ • Notifications  │
 │ • Projections    │       │ • Rank opps       │       │ • Dependency audit   │       │ • Log outcomes   │
+│ ⚠ Experimental  │       │                   │       │                      │       │                  │
 └──────────────────┘       └───────────────────┘       └──────────────────────┘       └──────────────────┘
 ```
 
@@ -55,19 +58,19 @@ The system runs daily, surfaces intelligent summaries, and routes decisions thro
 
 ## Daily Brief Workflow
 
-Every morning the system executes the following sequence:
+The proposed daily sequence. Each step is a **design claim** that requires a passing simulation before it is treated as verified.
 
-1. **Trigger** — Runs at **07:00** via Power Automate scheduled flow
+1. **Trigger** — Runs at 07:00 via a configured scheduler
 2. **Collect** — Orchestration Agent requests summaries from all agents
 3. **Build** — Assembles a structured Daily Brief with four sections:
-   - 📊 **Financial Status** — current score, risks, projections
+   - 📊 **Financial Status** — current score, risks, projections *(scoring formula experimental)*
    - 💼 **Income Opportunities** — top job matches, ranked by fit
    - 🔧 **System Health** — toolchain status, pending upgrades
-   - ✅ **Actions Requiring Approval** — numbered list of pending decisions
-4. **Present** — Brief is delivered to Theodore (email / Teams / chat)
-5. **Await** — System waits for Yes/No responses (e.g., `1. Yes, 2. No, 3. Yes`)
-6. **Route** — Orchestration Agent sends approved items to the Automation Agent for execution; logs declined ones
-7. **Log** — All decisions and outcomes are written to the audit log
+   - ✅ **Actions Requiring Approval** — structured action records pending human decision
+4. **Present** — Brief is delivered via the configured notification channel
+5. **Await** — System waits for decisions against each action record
+6. **Route** — Orchestration Agent sends approved items for execution; logs all decisions
+7. **Log** — Consequential decisions written to the durable audit record; routine telemetry to short-lived logs
 
 ---
 
@@ -76,7 +79,7 @@ Every morning the system executes the following sequence:
 ```
 /
 ├── README.md                      ← This file
-├── GETTING_STARTED.md             ← Week-by-week Phase 2 build guide
+├── GETTING_STARTED.md             ← How to run the first simulation (no paid services required)
 ├── .gitignore
 ├── LICENSE
 ├── CONTRIBUTING.md
@@ -102,8 +105,12 @@ Every morning the system executes the following sequence:
 ├── templates/
 │   ├── copilot-studio-agent-template.md
 │   ├── excel-workbook-schema.md
-│   ├── skill-profile-template.md  ← Fill in and save as /agents/skill-profile.md
+│   ├── skill-profile-template.md
 │   └── approval-pattern.md
+│
+├── tests/
+│   ├── README.md                  ← Test plan index and pass criteria
+│   └── simulation-01-basic-daily-brief.md  ← First validation test
 │
 └── diagrams/
     ├── multi-agent-map.mermaid
@@ -112,17 +119,33 @@ Every morning the system executes the following sequence:
 
 ---
 
+## Validation Before Deployment
+
+**No component of this system should be connected to real data, real accounts, or real notification channels until it has a passing simulation test recorded in `/tests/`.**
+
+The first required test is defined in [`/tests/simulation-01-basic-daily-brief.md`](tests/simulation-01-basic-daily-brief.md). It uses fictional data only, requires no paid services, and can be run manually.
+
+Required conditions before reducing human approval scope:
+
+- [ ] Observability: every agent action is logged with an action ID before execution
+- [ ] Rollback: at least one approved action class has a documented undo procedure
+- [ ] Kill switch: there is a defined procedure to halt all autonomous execution immediately
+- [ ] Risk limits: explicit maximum cost, scope, and frequency limits per action class are documented and tested
+
+---
+
+## Data Safety
+
+- **Do not commit real financial data, employment records, identity information, or credentials** to this repository.
+- Use the example/template files provided in `/templates/` for structural reference only.
+- Personal financial data belongs in private storage (OneDrive, local encrypted drive) — never in this public repository.
+- The `.gitignore` excludes `*.xlsx`, `*.pbix`, `*.env`, `secrets/`, and runtime logs. Safe test fixtures (JSON, CSV, SVG) **can** be committed if they contain only fictional example data.
+
+---
+
 ## Getting Started
 
-See **[GETTING_STARTED.md](GETTING_STARTED.md)** for a complete week-by-week Phase 2 build guide — from setting up the Excel Finance Workbook on Day 1 to running the full Daily Brief by the end of Week 5.
-
-Quick orientation:
-1. Review the agent specs in `/agents`
-2. Fill in your skill profile using `/templates/skill-profile-template.md`
-3. Follow `/templates/copilot-studio-agent-template.md` to build each agent in Copilot Studio
-4. Configure Power Automate flows using `/workflows/daily-brief-workflow.md`
-5. Connect Excel and Power BI data sources to the Financial Stability Agent
-6. Deploy and run the Daily Brief workflow
+See **[GETTING_STARTED.md](GETTING_STARTED.md)** for the recommended starting path: a zero-cost manual simulation of the first Daily Brief cycle using fictional data, with no Microsoft 365 or Copilot Studio required.
 
 ---
 

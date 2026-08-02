@@ -1,190 +1,122 @@
-# Getting Started — Phase 2 Build Guide
+# Getting Started — Run the First Simulation
 
-Phase 1 is done. The architecture is solid, every agent is specified, and the workflows are mapped. This document is your guide for Phase 2: turning the blueprint into a running system.
+This guide walks through the **first and most important step**: a zero-cost manual simulation of one Daily Brief cycle using completely fictional data.
 
-Work at your own pace. Each step is independent — you can do one a day, one a week, whatever your situation allows. The system builds incrementally and delivers value even before it is fully wired together.
+No Microsoft 365. No Copilot Studio. No Power Automate. No real personal data.
 
----
-
-## Before You Begin
-
-Confirm you have access to all of the following. You do not need all of them on Day 1 — but you will need them before the system can run end to end.
-
-| Service | Required For | Where to Get It |
-|---|---|---|
-| Microsoft 365 | Power Automate, Excel, Teams | microsoft.com/microsoft-365 |
-| Copilot Studio | Building each agent | copilotstudio.microsoft.com |
-| Power Automate | Daily trigger, flow execution | powerautomate.microsoft.com |
-| Power BI | Financial dashboards | powerbi.microsoft.com |
-| GitHub Copilot | Code assistance (optional) | github.com/features/copilot |
+The simulation is the validation gate for Phase 1. Until it passes, no real data or paid services should be connected.
 
 ---
 
-## Week 1 — Financial Foundation
+## Why Simulate First
 
-### Day 1: Set Up the Excel Finance Workbook
+This system is a proposal, not a proven design. The agent logic, scoring formulas, approval workflows, and orchestration patterns are design claims. Simulation is how we find out whether the claims hold before connecting real accounts, real finances, or real notifications.
 
-This is the system's data source. Everything else reads from it.
-
-1. Open Excel (desktop or online)
-2. Create a new blank workbook
-3. Create five sheets named exactly:
-   - `Income`
-   - `Expenses`
-   - `Savings`
-   - `Debt`
-   - `Summary`
-4. Build each sheet using the column definitions in [`/templates/excel-workbook-schema.md`](templates/excel-workbook-schema.md)
-5. Enter **one month of real data** — this gives the Financial Stability Agent something to score on Day 1
-6. On the `Summary` sheet, define the named ranges listed in the schema using Excel's **Formulas → Name Manager**
-7. Save the workbook to **OneDrive or SharePoint** (not your local drive — the agent needs to reach it via Power Automate)
-
-> Do not commit this file to the repository. It is already excluded by `.gitignore`.
+A simulation also costs nothing. It can be run today with a text editor.
 
 ---
 
-### Day 2–3: Build the Financial Stability Agent in Copilot Studio
+## Step 1 — Read the First Test Case
 
-1. Go to [copilotstudio.microsoft.com](https://copilotstudio.microsoft.com)
-2. Click **Create** → **New agent**
-3. Name it: `Financial Stability Agent`
-4. In the description, paste the Mission statement from [`/agents/financial-stability-agent.md`](agents/financial-stability-agent.md)
-5. Under **Actions**, add a new action connected to **Excel Online (Business)** via the Power Automate connector
-   - Action: Read rows from `Summary` sheet
-   - Map each named range to a variable in the agent
-6. Build the **Stability Score topic**:
-   - Input variables: `NetCashflow`, `SavingsRate`, `DebtToIncome`, `EmergencyFundMonths`, expense trend delta
-   - Apply the weighted scoring formula from the agent spec (30/25/20/15/10 weights)
-   - Output: `StabilityScore` (integer 0–100)
-7. Build the **Risk Flag topic**:
-   - Check each of the five risk conditions defined in the spec
-   - Output: array of flag strings
-8. Build the **90-Day Projection topic**:
-   - Use the last 3 months of income and expense data from Excel
-   - Apply linear trend extrapolation
-   - Output: a plain-language projection sentence
-9. Build the **Summary Generation topic**:
-   - Assemble the four outputs into the structured paragraph format defined in the Daily Brief workflow
-10. **Publish** the agent
+Open [`/tests/simulation-01-basic-daily-brief.md`](tests/simulation-01-basic-daily-brief.md).
+
+This document defines:
+- The fictional input data for one Daily Brief cycle
+- The expected outputs from each agent
+- The approval decision scenario
+- The prohibited actions the system must not take
+- The pass evidence required to call the test a success
+
+Read it fully before proceeding.
 
 ---
 
-### Day 4–5: Test the Financial Stability Agent
+## Step 2 — Run the Simulation Manually
 
-1. In Copilot Studio, open the **Test chat** panel
-2. Send: `Run financial stability check`
-3. Verify the agent reads from your Excel workbook and returns:
-   - A score between 0–100
-   - A risk flag list (or "None")
-   - A 90-day projection sentence
-4. If the score reads correctly, the Financial Stability Agent is functional
-5. Update [`ROADMAP.md`](ROADMAP.md) — check off: `Build Financial Stability Agent in Copilot Studio` and `Connect Excel finance workbook to Financial Stability Agent`
+You do not need any running software. Work through the test case using the agent spec documents in `/agents/` as your logic reference.
 
----
+For each agent, manually apply the logic to the fictional inputs:
 
-## Week 2 — Job Search Engine
-
-### Day 1: Fill In Your Skill Profile
-
-1. Copy [`/templates/skill-profile-template.md`](templates/skill-profile-template.md) to a new file at `/agents/skill-profile.md`
-2. Fill in your actual skills, certifications, experience, preferences, and constraints
-3. Commit the file — this becomes the Job-Search Agent's reference document
-
-> This is the single most important configuration step for the Job-Search Agent. The more accurate your profile, the better the fit scores.
+1. **Financial Stability Agent** — apply the scoring formula from [`/agents/financial-stability-agent.md`](agents/financial-stability-agent.md) to the fictional financial data. Record the score, risk flags, and projection.
+2. **Job-Search Agent** — apply the skill-match scoring to the fictional job listings against the fictional skill profile. Record the top 5 ranked results.
+3. **Development Tool Agent** — apply the dependency audit and toolchain health rules to the fictional project state. Record the health summary.
+4. **Orchestration Agent** — assemble the four sections of the Daily Brief from the outputs above. Record the assembled brief.
+5. **Approval step** — apply the fictional approval decision from the test case. Record which action records are approved and which are declined.
+6. **Automation Agent** — record what would be executed for each approved action. Verify no prohibited actions occur.
+7. **Audit log** — write the audit log entries for all decisions and outcomes.
 
 ---
 
-### Day 2–4: Build the Job-Search Agent in Copilot Studio
+## Step 3 — Record Pass Evidence
 
-1. Create a new agent: `Job-Search Agent`
-2. Paste the Mission from [`/agents/job-search-agent.md`](agents/job-search-agent.md)
-3. Connect your Skill Profile (`/agents/skill-profile.md`) as a knowledge source
-4. Under **Actions**, configure board feeds:
-   - LinkedIn Jobs API or RSS (requires LinkedIn developer access)
-   - Indeed RSS feed (publicly available)
-   - Any other boards you prefer
-5. Build the **Board Scan topic**: fetch and normalize listings since last run
-6. Build the **Skill Match Scoring topic**: compare each listing against skill profile; compute fit score; discard below 60
-7. Build the **Rank and Filter topic**: apply your preference filters; return top 5
-8. Build the **Draft Cover Letter topic**: for each top opportunity, generate a tailored outline
-9. **Publish** the agent
+Compare your simulation outputs against the expected outputs and pass criteria defined in the test case.
+
+If every criterion passes, record the result in the test file:
+- Date
+- Your name or handle
+- A brief description of how you ran the simulation
+- Confirmation of each pass criterion
+
+If any criterion fails, record what failed and what the correct behavior should be. Open an issue or update the relevant agent spec before re-running.
 
 ---
 
-## Week 3 — System Health and Automation Layers
+## Step 4 — Run the Remaining Simulation Tests
 
-### Development Tool Agent
+Once Test 01 passes, work through the remaining tests in `/tests/`:
 
-1. Create a new agent: `Development Tool Agent`
-2. Connect your active GitHub repositories as knowledge/data sources
-3. Build topics for: toolchain health check, dependency audit, linting check, CI/CD health review
-4. Reference [`/agents/development-tool-agent.md`](agents/development-tool-agent.md) for the full spec
+| Test | Scenario |
+|---|---|
+| 02 | Missing response — no approval reply within the wait window |
+| 03 | Ambiguous approval — malformed or partial decision response |
+| 04 | Duplicate execution guard — same action approved twice in one cycle |
+| 05 | Sensitive-data protection — fictional data containing PII-like values |
 
-### Automation Agent
-
-1. Create a new agent: `Automation Agent`
-2. Its primary function is executing Power Automate flows — connect it to your Power Automate environment
-3. Build topics for: execute approved flows, trigger Power BI refresh, send notifications, write audit log entries
-4. Reference [`/agents/automation-agent.md`](agents/automation-agent.md) for the full spec
+All five tests must pass before Phase 1 is considered validated.
 
 ---
 
-## Week 4 — Orchestration Layer
+## Step 5 — Phase 2 Implementation (Only After Simulation Tests Pass)
 
-This is the most important and most complex agent. Build it last, after all four sub-agents are tested and running.
+Once all five simulation tests have passing results recorded in `/tests/`, Phase 2 implementation can begin.
 
-1. Create a new agent: `Orchestration Agent`
-2. Connect it to all four sub-agents as callable actions
-3. Build the **Daily Brief Assembly topic** — calls all four agents, collects responses, assembles the four-section brief
-4. Build the **Response Parsing topic** — parses `1. Yes, 2. No, 3. Yes` format
-5. Build the **Route Decisions topic** — sends approved items to Automation Agent; logs declined
-6. Build the **Escalation Handling topic** — out-of-schedule urgent briefs
-7. Build the **Audit Logging topic** — writes every event to the log store
-8. Reference [`/agents/orchestration-agent.md`](agents/orchestration-agent.md) and [`/workflows/orchestration-map.md`](workflows/orchestration-map.md) for the full spec
-9. **Publish** the agent
+**Implementation is adapter selection, not architecture design.** The architecture is specified in `/agents/` and `/workflows/`. Phase 2 is choosing which runtime to use to implement it.
 
----
+### Option A — Microsoft 365 Ecosystem
+- Copilot Studio for agent authoring
+- Power Automate for scheduling and flow execution
+- Excel Online (via OneDrive/SharePoint) as the financial data store
+- Power BI for reporting dashboards
+- Teams or email for notification delivery
 
-## Week 5 — Wire It All Together
+### Option B — Alternative Runtime
+Any combination of tools that satisfies the agent specs and passes the simulation tests is acceptable. The agent specs are implementation-agnostic.
 
-### Set Up the Power Automate Daily Trigger
+### Setting Up the Financial Data Store (Use Fictional Data First)
 
-1. Go to [powerautomate.microsoft.com](https://powerautomate.microsoft.com)
-2. Create a new **Scheduled cloud flow**
-3. Set trigger: **Daily at 07:00** (your local timezone)
-4. Add action: **Call Copilot Studio agent** → select `Orchestration Agent`
-5. Pass trigger payload: `{ "trigger": "daily_brief" }`
-6. Save and **turn on** the flow
-7. Test by manually running the flow — verify the Daily Brief arrives in your email or Teams channel
+Before connecting any real financial data:
 
-### Connect Power BI
+1. Build the workbook structure using [`/templates/excel-workbook-schema.md`](templates/excel-workbook-schema.md)
+2. Populate it with fictional data matching the format in the test cases
+3. Verify the Financial Stability Agent reads and scores it correctly
+4. Only replace fictional data with real data after the agent produces correct results on fictional inputs
 
-1. Open Power BI
-2. Create a new dataset sourced from your Excel Finance Workbook (via OneDrive)
-3. Build two report pages:
-   - **Financial Status** — stability score gauge, cashflow trend, risk flags
-   - **Job Opportunities** — top matches from the last 7 days
-4. Set the dataset to **Daily scheduled refresh at 07:30**
+> **Data safety reminder:** Never commit the financial workbook to this repository. It is excluded by `.gitignore`. Store it in private cloud storage or locally. Do not include real account numbers, income amounts, employer names, or any personally identifying information in any file committed here.
+
+### Setting Up the Skill Profile
+
+1. Copy [`/templates/skill-profile-template.md`](templates/skill-profile-template.md) to a private location outside this repository
+2. Fill in your actual skills, certifications, experience, and preferences
+3. Do not commit real employment history, identity information, or contact details to this public repository
 
 ---
 
-## You're Done When
+## What Has Not Been Verified Yet
 
-- [ ] Daily Brief arrives at 07:00 every morning
-- [ ] You can reply with approval decisions and see them execute
-- [ ] Financial stability score updates from your real Excel data
-- [ ] Job opportunities appear in the brief on days they exist
-- [ ] All decisions appear in the audit log
+- The stability scoring formula produces meaningful, calibrated results across different financial situations
+- The 90-day linear projection is accurate for the data patterns it will encounter
+- The skill-match fit score correlates with actual job interview success rates
+- The orchestration agent correctly handles all edge cases (timeouts, partial responses, duplicate approvals)
+- Any of the agent logic works correctly in a real implementation runtime
 
-That's the complete system. Every piece was already designed. This guide is just the order in which to build it.
-
----
-
-## If You Get Stuck
-
-- Each agent spec in `/agents` has the full logic definition
-- Each workflow in `/workflows` has the step-by-step flow
-- The templates in `/templates` have reusable patterns for approvals, agent structure, and data schemas
-- Open an issue in this repository using the templates in `.github/ISSUE_TEMPLATE` if you want to propose a change or ask for help
-
-Take it one week at a time. The system will be running before you know it.
+These are all open questions that the simulation tests and Phase 2 are designed to answer.
