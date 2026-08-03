@@ -1,0 +1,5 @@
+# Runtime dependencies
+# Add third-party API clients here as agents are wired to real services, e.g.:
+#   yfinance>=0.2          # financial market data
+#   requests>=2.31         # HTTP client
+#   python-dotenv>=1.0     # .env file support
