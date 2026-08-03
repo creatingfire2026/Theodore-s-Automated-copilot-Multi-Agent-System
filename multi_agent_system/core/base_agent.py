@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+from .workflow_spec import WorkflowSpec
+
 
 class BaseAgent(ABC):
     """Common interface for all agents in the multi-agent system."""
@@ -19,6 +21,15 @@ class BaseAgent(ABC):
 
         Returns:
             A dictionary containing the result and any metadata.
+        """
+
+    @property
+    @abstractmethod
+    def workflow_spec(self) -> WorkflowSpec:
+        """Return the structured WorkflowSpec for this agent.
+
+        Every concrete agent must declare its objective, inputs, outputs,
+        dependencies, error handling, and use cases via a WorkflowSpec.
         """
 
     def describe(self) -> str:

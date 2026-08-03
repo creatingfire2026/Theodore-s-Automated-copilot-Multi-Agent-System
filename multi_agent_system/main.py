@@ -1,5 +1,6 @@
 """Entry point for the Theodore Multi-Agent System."""
 
+import json
 import logging
 
 from multi_agent_system.core import Orchestrator
@@ -19,6 +20,10 @@ def main():
     orchestrator.register(JobAgent())
 
     logger.info("Registered agents: %s", orchestrator.list_agents())
+
+    # --- Print workflow specs for all agents ---
+    workflows = orchestrator.describe_workflows()
+    logger.info("Workflow specifications:\n%s", json.dumps(workflows, indent=2))
 
     # --- Example: financial tasks ---
     market = orchestrator.dispatch("financial_agent", {"type": "market_summary", "ticker": "AAPL"})
