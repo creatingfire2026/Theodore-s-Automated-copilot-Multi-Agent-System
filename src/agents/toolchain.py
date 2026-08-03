@@ -1,11 +1,12 @@
 """Toolchain Optimization Agent.
 
 Inspects project dependencies, detects outdated packages, flags
-security advisories, and produces a prioritized upgrade report.
+security advisories via pip-audit, and produces a prioritized upgrade report.
 """
 
 import json
-import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,7 +15,7 @@ from ..shared.config import Config
 
 
 class ToolchainAgent(BaseAgent):
-    """Audits and optimizes the software toolchain."""
+    """Audits and optimizes the software toolchain using pip-audit."""
 
     def __init__(self, config: Optional[Config] = None):
         super().__init__("toolchain", config or Config())
@@ -73,16 +74,52 @@ class ToolchainAgent(BaseAgent):
         return manifests
 
     def _audit_dependencies(self, manifests: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Parse manifests and check for outdated / vulnerable packages.
+        """Run pip-audit for vulnerability scanning."""
+        vulnerabilities: List[Dict[str, Any]] = []
+        pip_audit_error: Optional[str] = None
 
-        Replace stubs with pip-audit, npm audit, or Dependabot API calls.
-        """
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip_audit", "--format", "json", "--progress-spinner", "off"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            raw = result.stdout.strip()
+            if raw:
+                pip_data = json.loads(raw)
+                for dep in pip_data.get("dependencies", []):
+                    for vuln in dep.get("vulns", []):
+                        vulnerabilities.append({
+                            "package": dep.get("name"),
+                            "version": dep.get("version"),
+                            "id": vuln.get("id"),
+                            "description": vuln.get("description"),
+                            "fix_versions": vuln.get("fix_versions", []),
+                        })
+        except FileNotFoundError:
+            pip_audit_error = "pip-audit not installed"
+            self.logger.warning("pip-audit not available; skipping vulnerability scan")
+        except subprocess.TimeoutExpired:
+            pip_audit_error = "pip-audit timed out"
+            self.logger.warning("pip-audit timed out")
+        except Exception as exc:  # noqa: BLE001
+            pip_audit_error = str(exc)
+            self.logger.warning("pip-audit error: %s", exc)
+
+        recommendations = [
+            f"Upgrade {v['package']} to {v['fix_versions'][0]} to fix {v['id']}"
+            for v in vulnerabilities
+            if v.get("fix_versions")
+        ]
+
         return {
             "manifests_found": len(manifests),
             "manifests": manifests,
             "outdated": [],
-            "vulnerabilities": [],
-            "recommendations": [],
+            "vulnerabilities": vulnerabilities,
+            "pip_audit_error": pip_audit_error,
+            "recommendations": recommendations,
         }
 
     def _write_report(self, audit: Dict[str, Any], path: str) -> None:

@@ -1,17 +1,25 @@
 """Job-Seeking Automation Agent.
 
-Searches job boards, filters listings against Theodore's profile,
-and prepares tailored application materials.
+Searches job boards via the Remotive public API (no auth required),
+filters listings against Theodore's profile, and returns ranked results.
 """
 
 from typing import Any, Dict, List, Optional
 
+try:
+    import requests as _requests
+    _REQUESTS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _REQUESTS_AVAILABLE = False
+
 from ..shared.base_agent import AgentResult, BaseAgent
 from ..shared.config import Config
 
+_REMOTIVE_URL = "https://remotive.com/api/remote-jobs"
+
 
 class JobSeekerAgent(BaseAgent):
-    """Automates job discovery and application pipeline."""
+    """Automates job discovery via Remotive and ranks results."""
 
     def __init__(self, config: Optional[Config] = None):
         super().__init__("job_seeker", config or Config())
@@ -55,14 +63,45 @@ class JobSeekerAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _search_listings(self, keywords: List[str], location: str) -> List[Dict[str, Any]]:
-        """Query job boards for matching listings.
+        """Query the Remotive public API for remote job listings."""
+        if not _REQUESTS_AVAILABLE:
+            self.logger.warning("requests not installed — returning empty listings")
+            return []
 
-        Replace this stub with real API calls (e.g. LinkedIn, Indeed,
-        Greenhouse, Lever) or scraping pipelines.
-        """
-        self.logger.debug("Querying job boards for %s in %s", keywords, location)
-        return []
+        query = " ".join(keywords)
+        self.logger.debug("Querying Remotive for '%s'", query)
+        try:
+            resp = _requests.get(
+                _REMOTIVE_URL,
+                params={"search": query, "limit": 20},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            raw_jobs = resp.json().get("jobs", [])
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Remotive API call failed: %s", exc)
+            return []
+
+        return [
+            {
+                "id": job.get("id"),
+                "title": job.get("title"),
+                "company": job.get("company_name"),
+                "category": job.get("category"),
+                "tags": job.get("tags", []),
+                "url": job.get("url"),
+                "published": job.get("publication_date"),
+                "salary": job.get("salary"),
+                "match_score": self._score(job, keywords),
+            }
+            for job in raw_jobs
+        ]
+
+    def _score(self, job: Dict[str, Any], keywords: List[str]) -> int:
+        """Naive keyword-match score against title + tags."""
+        text = (job.get("title", "") + " " + " ".join(job.get("tags", []))).lower()
+        return sum(1 for kw in keywords if kw.lower() in text)
 
     def _rank_matches(self, listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Score and rank listings against Theodore's profile."""
+        """Sort listings by match score descending."""
         return sorted(listings, key=lambda x: x.get("match_score", 0), reverse=True)

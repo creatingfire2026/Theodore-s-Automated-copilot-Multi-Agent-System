@@ -5,22 +5,30 @@ A commanding Copilot‑driven multi‑agent system forged for stability, opportu
 ## Architecture
 
 ```
-main.py                        ← Entry point
+main.py                        ← CLI entry point (Rich terminal dashboard)
+serve.py                       ← Web dashboard launcher
 src/
+├── scheduler.py               ← APScheduler-based cron/interval runner
 ├── orchestrator/
 │   └── core.py                ← Concurrent agent dispatcher
 ├── agents/
-│   ├── financial.py           ← Market data & portfolio intelligence
-│   ├── job_seeker.py          ← Job discovery & application pipeline
-│   └── toolchain.py           ← Dependency audit & upgrade recommendations
+│   ├── financial.py           ← yfinance market data & portfolio intelligence
+│   ├── job_seeker.py          ← Remotive API job discovery & match ranking
+│   └── toolchain.py           ← pip-audit dependency & vulnerability scan
+├── web/
+│   └── app.py                 ← FastAPI dashboard (REST + HTML UI)
 └── shared/
     ├── base_agent.py          ← Abstract agent contract (AgentResult)
     ├── config.py              ← Environment-driven configuration
-    └── logger.py              ← Centralized logging factory
+    ├── logger.py              ← Centralized logging factory
+    └── renderer.py            ← Rich terminal renderer
 tests/
 ├── test_agents.py
 ├── test_orchestrator.py
-└── test_shared.py
+├── test_renderer.py
+├── test_shared.py
+└── test_web.py
+.github/workflows/ci.yml       ← GitHub Actions CI (Python 3.10/3.11/3.12)
 ```
 
 ## Quick Start
@@ -29,13 +37,20 @@ tests/
 # 1. Copy and fill in your environment variables
 cp .env.example .env
 
-# 2. Install dev dependencies
-pip install -r requirements-dev.txt
+# 2. Install dependencies
+pip install -r requirements.txt -r requirements-dev.txt
 
-# 3. Run all agents
+# 3. Run all agents once (Rich terminal dashboard)
 python main.py
 
-# 4. Run tests
+# 4. Start the web dashboard
+python serve.py           # → http://localhost:8000
+
+# 5. Run on a schedule (e.g. every 30 minutes, or daily at 09:00)
+python -m src.scheduler --interval 30
+python -m src.scheduler --cron "0 9 * * *"
+
+# 6. Run tests
 pytest
 ```
 
