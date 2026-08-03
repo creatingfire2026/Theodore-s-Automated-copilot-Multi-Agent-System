@@ -1,0 +1,11 @@
+# Theodore's Automated Copilot Multi-Agent System — Dependencies
+# Python 3.9+
+
+# No external runtime dependencies are required for the base scaffold.
+# Add libraries below as agents are extended.
+
+# --- Optional future dependencies ---
+# requests>=2.31.0          # HTTP calls for market/job APIs
+# pandas>=2.0.0             # Data analysis in FinancialAgent
+# pydantic>=2.0.0           # Task/result schema validation
+# python-dotenv>=1.0.0      # Environment variable management
