@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creatingfire.local/null-sentinel/application.schema.json",
+  "title": "NULL Sentinel Operational Application",
+  "description": "Schema for versioned, evidence-preserving NULL Sentinel operational applications and state transitions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","request_id","created_at","requestor","target","requested_transition","state","authority","risk","epistemic_status"],
+  "properties": {
+    "schema_version": {"$ref": "#/$defs/Version"},
+    "request_id": {"$ref": "#/$defs/Identifier"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "requestor": {"$ref": "#/$defs/Entity"},
+    "participants": {"type": "array", "items": {"$ref": "#/$defs/Entity"}, "maxItems": 100},
+    "target": {"$ref": "#/$defs/Entity"},
+    "intent": {"type": "string", "maxLength": 2000},
+    "success_condition": {"type": "string", "maxLength": 2000},
+    "current_state": {"type": "string", "maxLength": 2000},
+    "requested_transition": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "state": {"$ref": "#/$defs/State"},
+    "authority": {"$ref": "#/$defs/Authority"},
+    "risk": {"$ref": "#/$defs/Risk"},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/Evidence"}, "maxItems": 500},
+    "hypotheses": {"type": "array", "items": {"type": "string", "maxLength": 2000}, "maxItems": 100},
+    "epistemic_status": {"$ref": "#/$defs/EpistemicStatus"},
+    "decision": {"$ref": "#/$defs/Decision"},
+    "execution": {"$ref": "#/$defs/Execution"},
+    "verification": {"$ref": "#/$defs/Verification"},
+    "growth_delta": {"type": "object"},
+    "previous_record_hash": {"anyOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]},
+    "record_hash": {"anyOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]}
+  },
+  "$defs": {
+    "Version": {
+      "type":"object","additionalProperties":false,
+      "required":["major","minor","patch"],
+      "properties":{
+        "major":{"type":"integer","minimum":0},
+        "minor":{"type":"integer","minimum":0},
+        "patch":{"type":"integer","minimum":0}
+      }
+    },
+    "Identifier": {"type":"string","minLength":1,"maxLength":120,"pattern":"^[A-Za-z0-9._:-]+$"},
+    "Entity": {
+      "type":"object","additionalProperties":false,
+      "required":["id","type","display_name"],
+      "properties":{
+        "id":{"$ref":"#/$defs/Identifier"},
+        "type":{"enum":["HUMAN","AI_AGENT","SERVICE","DEVICE","REPOSITORY","ACCOUNT","WORKFLOW","INFRASTRUCTURE","OTHER"]},
+        "display_name":{"type":"string","minLength":1,"maxLength":200},
+        "perspective":{"type":"string","maxLength":2000}
+      }
+    },
+    "State": {"enum":["DISCOVERED","INTAKE","EVIDENCE_GATHERED","VALIDATED","RISK_CLASSIFIED","AUTHORIZED","DENIED","NEEDS_INFORMATION","APPROVAL_REQUIRED","QUEUED","EXECUTING","VERIFYING","VERIFIED","ACTIVE","FAILED","DIAGNOSE","RETRY","ROLLBACK","ESCALATE","DRIFT_DETECTED","REVALIDATE","ACCESS_BLIND_SPOT","THREAT_INDICATOR","INVESTIGATE","CONFIRMED_THREAT","FALSE_POSITIVE"]},
+    "EpistemicStatus": {"enum":["OBSERVED","MEASURED","DOCUMENTED","DERIVED","INFERRED","MODEL_DEPENDENT","EXPLORATORY","UNKNOWN"]},
+    "Authority": {
+      "type":"object","additionalProperties":false,
+      "required":["class","basis"],
+      "properties":{
+        "class":{"enum":["AUTO_EXECUTE","EXECUTE_AND_REPORT","ASK_FIRST","BLOCK"]},
+        "basis":{"type":"string","minLength":1,"maxLength":2000},
+        "approval_id":{"anyOf":[{"type":"null"},{"$ref":"#/$defs/Identifier"}]}
+      }
+    },
+    "Risk": {
+      "type":"object","additionalProperties":false,
+      "required":["level","reversible","blast_radius","rollback_plan"],
+      "properties":{
+        "level":{"enum":["LOW","MEDIUM","HIGH","CRITICAL","UNKNOWN"]},
+        "reversible":{"type":"boolean"},
+        "blast_radius":{"type":"string","maxLength":2000},
+        "rollback_plan":{"type":"string","maxLength":4000}
+      }
+    },
+    "Evidence": {
+      "type":"object","additionalProperties":false,
+      "required":["source","claim","status"],
+      "properties":{
+        "source":{"type":"string","minLength":1,"maxLength":1000},
+        "claim":{"type":"string","minLength":1,"maxLength":4000},
+        "status":{"$ref":"#/$defs/EpistemicStatus"},
+        "timestamp":{"anyOf":[{"type":"null"},{"type":"string","format":"date-time"}]},
+        "hash":{"anyOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]}
+      }
+    },
+    "Decision": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "result":{"enum":["AUTHORIZE","DENY","NEED_INFORMATION","REQUIRE_APPROVAL","NO_ACTION",""]},
+        "reason":{"type":"string","maxLength":4000}
+      }
+    },
+    "Execution": {
+      "type":"object","additionalProperties":false,
+      "required":["attempted"],
+      "properties":{
+        "attempted":{"type":"boolean"},
+        "operation_id":{"anyOf":[{"type":"null"},{"$ref":"#/$defs/Identifier"}]},
+        "actual_action":{"type":"string","maxLength":4000},
+        "result":{"type":"string","maxLength":4000}
+      }
+    },
+    "Verification": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "method":{"type":"string","maxLength":4000},
+        "passed":{"type":["boolean","null"]},
+        "evidence":{"type":"array","items":{"$ref":"#/$defs/Evidence"},"maxItems":500},
+        "observed_effect":{"type":"string","maxLength":4000},
+        "residual_risk":{"type":"string","maxLength":4000}
+      }
+    }
+  }
+}
