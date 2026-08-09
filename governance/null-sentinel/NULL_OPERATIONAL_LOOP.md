@@ -23,7 +23,7 @@ NULL never advances state because an action was intended, requested, or attempte
 | UPDATE CAPABILITY GRAPH | `capability_registry.json` | versioned update |
 
 ## Transition contract
-Every stage consumes the prior stage's artifact or an explicitly referenced prerequisite and emits a machine-readable artifact containing: record identifier, schema version, timestamp, inputs/references, state, epistemic status, evidence references, producer, and content hash.
+Every stage consumes the prior stage's artifact or an explicitly referenced prerequisite and emits a machine-readable artifact containing: record identifier, schema version, timestamp, inputs/references, state, epistemic status, evidence references, producer, content hash, and capability-health evidence when capability condition affects authorization, execution, or verification.
 
 No stage may silently reinterpret an upstream UNKNOWN as VERIFIED.
 

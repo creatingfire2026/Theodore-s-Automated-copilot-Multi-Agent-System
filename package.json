@@ -1,0 +1,12 @@
+{
+  "name": "theodore-s-automated-copilot-multi-agent-system",
+  "private": true,
+  "scripts": {
+    "test": "node --test governance/null-sentinel/tests/*.test.mjs",
+    "validate:structure": "node governance/null-sentinel/schema_validate.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  }
+}

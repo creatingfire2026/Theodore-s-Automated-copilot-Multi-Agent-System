@@ -1,4 +1,5 @@
 {
+  "schema_version": {"major": 1, "minor": 0, "patch": 0},
   "request_id": "",
   "created_at": "",
   "requestor": {"id": "", "type": "HUMAN|AI_AGENT|SERVICE|DEVICE|OTHER", "display_name": ""},
@@ -16,6 +17,22 @@
   "decision": {"result": "", "reason": ""},
   "execution": {"attempted": false, "operation_id": null, "actual_action": "", "result": ""},
   "verification": {"method": "", "passed": null, "evidence": [], "observed_effect": "", "residual_risk": ""},
+  "capability_health": {
+    "capability_id": "",
+    "provider": "",
+    "health": "HEALTHY|DEGRADED|AUTH_EXPIRED|RATE_LIMITED|PERMISSION_CHANGED|VERSION_DRIFT|UNREACHABLE|COMPROMISED|REVOKED",
+    "connection": "HEALTHY|DEGRADED|FAILED|UNKNOWN",
+    "authentication": "HEALTHY|DEGRADED|FAILED|UNKNOWN",
+    "permission": "HEALTHY|DENIED|FAILED|UNKNOWN",
+    "required_scope": [],
+    "observed_scope": [],
+    "version_state": "HEALTHY|DEGRADED|FAILED|UNKNOWN",
+    "rate_limit_state": "HEALTHY|DEGRADED|FAILED|UNKNOWN",
+    "trust_state": "HEALTHY|DEGRADED|FAILED|UNKNOWN",
+    "fallbacks": [],
+    "last_verified_at": null,
+    "verification_evidence": []
+  },
   "growth_delta": {"new_knowledge": [], "discarded_assumptions": [], "retained_unknowns": [], "new_operating_rules": [], "next_experiments": []},
   "previous_record_hash": null,
   "record_hash": null

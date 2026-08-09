@@ -1,0 +1,100 @@
+{
+  "schema_version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "request_id": "req.verification-failure.001",
+  "created_at": "2026-08-09T02:00:00Z",
+  "requestor": {
+    "id": "agent.null",
+    "type": "AI_AGENT",
+    "display_name": "NULL Sentinel"
+  },
+  "target": {
+    "id": "ledger.main",
+    "type": "SERVICE",
+    "display_name": "Structured action ledger"
+  },
+  "intent": "Append a new action record after authorization.",
+  "success_condition": "The write is verified against the declared success condition.",
+  "current_state": "VERIFYING",
+  "requested_transition": "VERIFYING->DIAGNOSE",
+  "state": "DIAGNOSE",
+  "authority": {
+    "class": "EXECUTE_AND_REPORT",
+    "basis": "Authorized reversible branch-local write.",
+    "approval_id": "approval.pr3.003"
+  },
+  "risk": {
+    "level": "LOW",
+    "reversible": true,
+    "blast_radius": "Branch-local structured action records.",
+    "rollback_plan": "Remove the appended record and retry after diagnosis."
+  },
+  "evidence": [
+    {
+      "source": "execution-receipt",
+      "claim": "The append operation completed without transport failure.",
+      "status": "OBSERVED",
+      "timestamp": "2026-08-09T02:04:00Z",
+      "hash": null
+    }
+  ],
+  "epistemic_status": "OBSERVED",
+  "decision": {
+    "result": "AUTHORIZE",
+    "reason": "The change is reversible and isolated."
+  },
+  "execution": {
+    "attempted": true,
+    "operation_id": "op.verification-failure.001",
+    "actual_action": "Appended a candidate action record to the ledger.",
+    "result": "Append completed."
+  },
+  "verification": {
+    "method": "Post-append ledger diff and success-condition comparison.",
+    "passed": false,
+    "evidence": [
+      {
+        "source": "ledger-diff",
+        "claim": "The appended record did not satisfy the declared success condition.",
+        "status": "MEASURED",
+        "timestamp": "2026-08-09T02:05:00Z",
+        "hash": null
+      }
+    ],
+    "observed_effect": "The ledger changed, but the declared success condition is still unmet.",
+    "residual_risk": "The system state remains divergent until diagnosis or rollback."
+  },
+  "capability_health": {
+    "capability_id": "ledger.append",
+    "provider": "Structured Action Lab",
+    "health": "HEALTHY",
+    "connection": "HEALTHY",
+    "authentication": "HEALTHY",
+    "permission": "HEALTHY",
+    "required_scope": [
+      "ledger:append"
+    ],
+    "observed_scope": [
+      "ledger:append"
+    ],
+    "version_state": "HEALTHY",
+    "rate_limit_state": "HEALTHY",
+    "trust_state": "HEALTHY",
+    "fallbacks": [],
+    "last_verified_at": "2026-08-09T01:55:00Z",
+    "verification_evidence": [
+      {
+        "source": "health-check",
+        "claim": "The append capability was healthy immediately before execution.",
+        "status": "MEASURED",
+        "timestamp": "2026-08-09T01:55:00Z",
+        "hash": null
+      }
+    ]
+  },
+  "previous_record_hash": null,
+  "record_hash": "eec68410e2d1dc9e70a0d362cedc82c6d6029d17272ea10c103dbfabe83400f7"
+}

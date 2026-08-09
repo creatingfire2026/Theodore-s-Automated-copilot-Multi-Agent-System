@@ -26,6 +26,7 @@
     "decision": {"$ref": "#/$defs/Decision"},
     "execution": {"$ref": "#/$defs/Execution"},
     "verification": {"$ref": "#/$defs/Verification"},
+    "capability_health": {"$ref": "#/$defs/CapabilityHealth"},
     "growth_delta": {"type": "object"},
     "previous_record_hash": {"anyOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]},
     "record_hash": {"anyOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]}
@@ -108,6 +109,27 @@
         "evidence":{"type":"array","items":{"$ref":"#/$defs/Evidence"},"maxItems":500},
         "observed_effect":{"type":"string","maxLength":4000},
         "residual_risk":{"type":"string","maxLength":4000}
+      }
+    },
+    "HealthDimension": {"enum":["HEALTHY","DEGRADED","FAILED","UNKNOWN"]},
+    "CapabilityHealth": {
+      "type":"object","additionalProperties":false,
+      "required":["capability_id","provider","health","connection","authentication","permission","required_scope","observed_scope","version_state","rate_limit_state","trust_state","verification_evidence"],
+      "properties":{
+        "capability_id":{"$ref":"#/$defs/Identifier"},
+        "provider":{"type":"string","minLength":1,"maxLength":200},
+        "health":{"enum":["HEALTHY","DEGRADED","AUTH_EXPIRED","RATE_LIMITED","PERMISSION_CHANGED","VERSION_DRIFT","UNREACHABLE","COMPROMISED","REVOKED"]},
+        "connection":{"$ref":"#/$defs/HealthDimension"},
+        "authentication":{"$ref":"#/$defs/HealthDimension"},
+        "permission":{"enum":["HEALTHY","DENIED","FAILED","UNKNOWN"]},
+        "required_scope":{"type":"array","items":{"type":"string","minLength":1,"maxLength":200},"maxItems":100},
+        "observed_scope":{"type":"array","items":{"type":"string","minLength":1,"maxLength":200},"maxItems":100},
+        "version_state":{"$ref":"#/$defs/HealthDimension"},
+        "rate_limit_state":{"$ref":"#/$defs/HealthDimension"},
+        "trust_state":{"$ref":"#/$defs/HealthDimension"},
+        "fallbacks":{"type":"array","items":{"type":"string","minLength":1,"maxLength":200},"maxItems":100},
+        "last_verified_at":{"anyOf":[{"type":"null"},{"type":"string","format":"date-time"}]},
+        "verification_evidence":{"type":"array","items":{"$ref":"#/$defs/Evidence"},"maxItems":500}
       }
     }
   }
