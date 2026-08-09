@@ -1,0 +1,22 @@
+{
+  "request_id": "",
+  "created_at": "",
+  "requestor": {"id": "", "type": "HUMAN|AI_AGENT|SERVICE|DEVICE|OTHER", "display_name": ""},
+  "target": {"id": "", "type": "SERVICE|DEVICE|REPOSITORY|ACCOUNT|WORKFLOW|INFRASTRUCTURE|OTHER", "display_name": ""},
+  "intent": "",
+  "success_condition": "",
+  "current_state": "",
+  "requested_transition": "",
+  "state": "INTAKE",
+  "authority": {"class": "AUTO_EXECUTE|EXECUTE_AND_REPORT|ASK_FIRST|BLOCK", "basis": "", "approval_id": null},
+  "risk": {"level": "LOW|MEDIUM|HIGH|CRITICAL|UNKNOWN", "reversible": true, "blast_radius": "", "rollback_plan": ""},
+  "evidence": [],
+  "hypotheses": [],
+  "epistemic_status": "UNKNOWN",
+  "decision": {"result": "", "reason": ""},
+  "execution": {"attempted": false, "operation_id": null, "actual_action": "", "result": ""},
+  "verification": {"method": "", "passed": null, "evidence": [], "observed_effect": "", "residual_risk": ""},
+  "growth_delta": {"new_knowledge": [], "discarded_assumptions": [], "retained_unknowns": [], "new_operating_rules": [], "next_experiments": []},
+  "previous_record_hash": null,
+  "record_hash": null
+}
