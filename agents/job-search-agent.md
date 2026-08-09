@@ -10,8 +10,8 @@ Scan job boards and opportunity sources daily, filter listings by skill match an
 
 | Source | Description |
 |---|---|
-| Skill Profile | Theodore's current skills, certifications, and experience (maintained in a linked document) |
-| Job Board Feeds | RSS or API feeds from configured job boards (e.g., LinkedIn, Indeed, GitHub Jobs) |
+| Skill Profile | Theodore's current skills, certifications, and experience (maintained in a private linked document) |
+| Job Board Feeds | RSS or API feeds from configured job boards (e.g., LinkedIn, Indeed, Wellfound) |
 | Orchestration Agent | Activation signal when Financial Stability score drops below threshold |
 | Preference Config | Location, remote preference, salary floor, role types, excluded industries |
 

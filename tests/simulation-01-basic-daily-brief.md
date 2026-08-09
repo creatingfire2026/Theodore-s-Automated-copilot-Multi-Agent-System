@@ -41,11 +41,14 @@ All values are fictional and have no relation to any real person's finances.
 
 **Debt — July 2026**
 
-| Month | Creditor | Type | Opening Balance | Payment Made | Interest Charged | Closing Balance | APR |
-|---|---|---|---|---|---|---|---|
-| 2026-07-01 | Credit Union | Credit Card | 3400.00 | 200.00 | 44.00 | 3244.00 | 15.99% |
+| Month | Creditor | Type | Opening Balance | Minimum Payment | Payment Made | Interest Charged | Closing Balance | APR |
+|---|---|---|---|---|---|---|---|---|
+| 2026-07-01 | Credit Union | Credit Card | 3400.00 | 120.00 | 200.00 | 44.00 | 3244.00 | 15.99% |
 
-**Prior months (for projection):** Use a flat trend — income and expenses identical to July 2026 for May and June 2026.
+**Prior months (for trend and projection):**
+- Income and expenses are identical to July 2026 for May and June 2026.
+- Savings contributions are identical to July 2026 for May and June 2026.
+- Debt closes at `3556.00` in May 2026, `3400.00` in June 2026, and `3244.00` in July 2026.
 
 ---
 
@@ -92,9 +95,19 @@ Apply the experimental scoring formula from [`/agents/financial-stability-agent.
 - Total expenses: $2,693
 - Net cashflow: +$2,307 (positive)
 - Savings rate: $300 / $5,000 = 6% — **below 10% threshold → risk flag**
-- Debt balance: $3,244; annualized income: $60,000; DTI = 5.4% — within threshold
+- Monthly debt payments: $120 minimum payment
+- Monthly DTI: $120 / $5,000 = 2.4% — within threshold
 - Emergency fund: $7,100 / ($2,693/month) ≈ 2.6 months — **below 3-month threshold → risk flag**
 - Expense trend: flat (no month-over-month increase)
+- Debt trend: declining month over month
+
+**Expected component subscores:**
+- Cashflow subscore: 100
+- Savings rate subscore: 30
+- Monthly DTI subscore: 100
+- Emergency fund subscore: 44
+- Expense trend subscore: 50
+- Debt trend subscore: 100
 
 **Expected risk flags:**
 1. Savings rate below 10%
@@ -103,9 +116,9 @@ Apply the experimental scoring formula from [`/agents/financial-stability-agent.
 **Expected action records surfaced:**
 - `act_sim01_001`: Adjust savings rate target — reason: savings rate 6%, below 10% threshold
 
-**Expected score:** Positive cashflow and low DTI are favorable; two risk flags drag the score. A score in the **65–75 range** is consistent with this data. (Exact value depends on normalization — this is a known open question. Record the actual computed score.)
+**Expected score:** `73` using the experimental weighted subscore method documented in the agent spec.
 
-**Expected 90-day projection:** Flat trend → balance stable; savings growing at ~$300/month; debt payoff in approximately 16 months at current rate. (Linear estimate only.)
+**Expected 90-day projection:** `projection_status: low_confidence` with 3 complete months of history. Linear estimate shows cashflow stable, savings growing at ~$300/month, and debt continuing to decline.
 
 ---
 
@@ -151,10 +164,10 @@ Apply skill-match scoring to the fictional listings:
 Good morning. Here is your Daily Brief for 2026-07-22.
 
 📊 Financial Status ⚠ Experimental formula
-Stability Score: [65–75 range — record actual value]
+Stability Score: 73
 Net Cashflow: +$2,307
 Risk Flags: Savings rate below 10% | Emergency fund below 3-month threshold
-90-Day Projection: Balance stable; savings growing ~$300/month; debt payoff ~16 months (linear estimate only)
+90-Day Projection: Low confidence (3 months). Linear estimate: balance stable; savings growing ~$300/month; debt declining month over month
 
 💼 Income Opportunities
 1. Full Stack Engineer — Beta Industries | Fit: ~95% | Remote
@@ -231,7 +244,7 @@ Record `PASS` or `FAIL` for each criterion after running the simulation:
 
 | # | Criterion | Result |
 |---|---|---|
-| 1 | Financial Stability Agent produces a stability score in the 65–75 range for the fictional inputs | ⬜ |
+| 1 | Financial Stability Agent produces a stability score of 73 for the fictional inputs | ⬜ |
 | 2 | Financial Stability Agent surfaces exactly 2 risk flags for the fictional inputs | ⬜ |
 | 3 | Job-Search Agent discards listings below 60% fit score | ⬜ |
 | 4 | Job-Search Agent returns the correct top 3 matches in the correct rank order | ⬜ |
@@ -242,7 +255,7 @@ Record `PASS` or `FAIL` for each criterion after running the simulation:
 | 9 | No action executes before the user response is received | ⬜ |
 | 10 | No action_id is used more than once | ⬜ |
 | 11 | Financial score output is labeled experimental in the brief | ⬜ |
-| 12 | 90-day projection output is labeled as a linear extrapolation estimate in the brief | ⬜ |
+| 12 | 90-day projection output is labeled `low_confidence` and identified as a linear estimate in the brief | ⬜ |
 
 **Test passes when all 12 criteria are marked PASS.**
 

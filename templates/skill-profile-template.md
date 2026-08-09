@@ -1,8 +1,8 @@
 # Skill Profile — Theodore
 
-This document defines the skill profile used by the Job-Search Agent to score and filter job opportunities. Fill in every section accurately. The quality of your job matches depends entirely on the accuracy of this profile.
+This document defines the skill profile used by the Job-Search Agent to score and filter job opportunities. Fill in every section accurately in a **private copy** of this template. The quality of your job matches depends entirely on the accuracy of that private profile.
 
-Save your completed version at `/agents/skill-profile.md`. Do not leave placeholder text in sections that apply to you.
+Do **not** commit a completed real profile to this repository. If you need an in-repo example for simulation, use fictional or heavily redacted values only.
 
 ---
 

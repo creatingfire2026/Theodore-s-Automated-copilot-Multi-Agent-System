@@ -38,7 +38,8 @@ User / Theodore
 │  Agent       │ │  + Task      │ │ + Task     │ │    actions   │
 │              │ │  Agent       │ │ Agent      │ │              │
 │  Escalates → │ │  Escalates → │ │ Escalates→ │ │  Executes    │
-│  if score<70 │ │  if no match │ │ if Crit CVE│ │  PA flows    │
+│  if score<70 │ │ if no matches│ │ if Crit CVE│ │  PA flows    │
+│              │ │   for 3 days │ │            │ │              │
 └──────────────┘ └──────────────┘ └────────────┘ └──────────────┘
        │                │               │               │
        └────────────────┴───────────────┴───────────────┘
@@ -63,7 +64,7 @@ User / Theodore
 |---|---|---|---|---|---|
 | **Orchestration** | — | Trigger / Request | Trigger / Request | Trigger / Request | Execute approved actions |
 | **Financial** | Escalate (score < 70) | — | — | — | — |
-| **Job-Search** | Escalate (no matches) | — | — | — | — |
+| **Job-Search** | Escalate (no matches for 3 consecutive days) | — | — | — | — |
 | **Dev Tool** | Escalate (Critical CVE) | — | — | — | — |
 | **Automation** | Execution report / errors | — | — | — | — |
 

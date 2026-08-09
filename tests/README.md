@@ -13,10 +13,10 @@ Phase 1 is not considered validated until all five tests below have a passing re
 | Test File | Scenario | Status |
 |---|---|---|
 | [simulation-01-basic-daily-brief.md](simulation-01-basic-daily-brief.md) | Basic Daily Brief cycle — all agents respond, user approves all items | ⬜ Not yet run |
-| simulation-02-missing-response.md | No approval reply received within the 4-hour wait window | ⬜ Not yet defined |
-| simulation-03-ambiguous-approval.md | Malformed or partial decision response from user | ⬜ Not yet defined |
-| simulation-04-duplicate-execution.md | Same action_id approved twice in one cycle | ⬜ Not yet defined |
-| simulation-05-sensitive-data-protection.md | Fictional data containing PII-like values; verify no sensitive data is logged or transmitted | ⬜ Not yet defined |
+| [simulation-02-missing-response.md](simulation-02-missing-response.md) | No approval reply received within the 4-hour wait window | ⬜ Not yet run |
+| [simulation-03-ambiguous-approval.md](simulation-03-ambiguous-approval.md) | Malformed or partial decision response from user | ⬜ Not yet run |
+| [simulation-04-duplicate-execution.md](simulation-04-duplicate-execution.md) | Same action_id approved twice in one cycle | ⬜ Not yet run |
+| [simulation-05-sensitive-data-protection.md](simulation-05-sensitive-data-protection.md) | Fictional data containing PII-like values; verify no sensitive data is logged or transmitted | ⬜ Not yet run |
 
 ---
 
