@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://creatingfire.local/null-sentinel/capability-registry.schema.json",
   "title": "NULL Capability Registry Schema",
-  "description": "Canonical structural contract for capability identity, authority, operational health, fallback admission, version drift, and signed registry state.",
+  "description": "Canonical structural contract for capability identity, authority, operational health, fallback admission, version drift, and signed registry state. Cross-field health invariants are enforced by the validator health gate, not by this structural schema.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -183,31 +183,5 @@
         }
       }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "health_vector": {
-            "properties": {
-              "verified_healthy": { "const": true }
-            },
-            "required": ["verified_healthy"]
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "health_vector": {
-            "properties": {
-              "connected": { "const": true },
-              "authenticated": { "const": true },
-              "authorized": { "const": true },
-              "executable": { "const": true }
-            }
-          }
-        }
-      }
-    }
-  ]
+  }
 }
