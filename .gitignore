@@ -1,0 +1,46 @@
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor folders
+.vscode/
+.idea/
+
+# Build, temp, and logs
+dist/
+build/
+temp/
+cache/
+*.log
+
+# Runtime telemetry and short-lived logs (not version-controlled)
+logs/
+telemetry/
+
+# Private data and secrets — NEVER commit these
+*.xlsx
+*.pbix
+*.bak
+*.old
+*.env
+.env.*
+secrets/
+private/
+credentials/
+/agents/*.local.md
+*.private.json
+secrets.json
+credentials.json
+
+# Exported app packages
+*.zip
+*.msapp
+
+# Safe files that CAN be committed:
+# *.json — allowed (test fixtures, config schemas, example data with fictional values)
+# *.csv  — allowed (test fixtures and example data with fictional values)
+# *.svg  — allowed (diagrams and vector exports)
+
+# Image exports (generated artifacts — regenerate from source instead)
+*.png
