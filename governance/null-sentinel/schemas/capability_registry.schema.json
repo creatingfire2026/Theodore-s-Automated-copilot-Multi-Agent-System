@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creatingfire.local/null-sentinel/capability-registry.schema.json",
+  "title": "NULL Capability Registry Schema",
+  "description": "Canonical structural contract for capability identity, authority, operational health, fallback admission, version drift, and signed registry state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capability_id",
+    "version",
+    "definition_hash",
+    "health_vector",
+    "fallback_routes",
+    "signature_envelope"
+  ],
+  "properties": {
+    "capability_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9_.:-]+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "definition_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "health_status": {
+      "enum": [
+        "HEALTHY",
+        "DEGRADED",
+        "AUTH_EXPIRED",
+        "RATE_LIMITED",
+        "PERMISSION_CHANGED",
+        "VERSION_DRIFT",
+        "UNREACHABLE",
+        "COMPROMISED",
+        "REVOKED",
+        "UNRESOLVED"
+      ]
+    },
+    "health_vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connected",
+        "authenticated",
+        "authorized",
+        "executable",
+        "verified_healthy"
+      ],
+      "properties": {
+        "connected": { "type": "boolean" },
+        "authenticated": { "type": "boolean" },
+        "authorized": { "type": "boolean" },
+        "executable": { "type": "boolean" },
+        "verified_healthy": { "type": "boolean" },
+        "required_scopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "observed_scopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "version_state": {
+          "enum": ["HEALTHY", "VERSION_DRIFT", "UNKNOWN"]
+        },
+        "rate_limit_state": {
+          "enum": ["HEALTHY", "RATE_LIMITED", "UNKNOWN"]
+        },
+        "trust_state": {
+          "enum": ["HEALTHY", "THREAT_INDICATOR", "COMPROMISED", "UNKNOWN"]
+        }
+      }
+    },
+    "fallback_routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fallback_capability_id",
+          "sentinel_admission_status",
+          "resolution_state"
+        ],
+        "properties": {
+          "fallback_capability_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[a-z0-9_.:-]+$"
+          },
+          "sentinel_admission_status": {
+            "enum": [
+              "UNEVALUATED",
+              "PENDING_ADMISSION",
+              "ADMITTED",
+              "REJECTED"
+            ]
+          },
+          "resolution_state": {
+            "enum": ["UNRESOLVED", "RESOLVED"]
+          },
+          "admission_record_id": {
+            "type": ["string", "null"]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "sentinel_admission_status": { "const": "ADMITTED" }
+              },
+              "required": ["sentinel_admission_status"]
+            },
+            "then": {
+              "required": ["admission_record_id"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "sentinel_admission_status": {
+                  "enum": ["UNEVALUATED", "PENDING_ADMISSION", "REJECTED"]
+                }
+              },
+              "required": ["sentinel_admission_status"]
+            },
+            "then": {
+              "properties": {
+                "resolution_state": { "const": "UNRESOLVED" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "signature_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anchor_key_id",
+        "canonicalization",
+        "payload_hash",
+        "signature_algorithm",
+        "timestamp",
+        "signature"
+      ],
+      "properties": {
+        "anchor_key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "canonicalization": {
+          "const": "RFC8785-JCS"
+        },
+        "payload_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "signature_algorithm": {
+          "enum": ["Ed25519"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "health_vector": {
+            "properties": {
+              "verified_healthy": { "const": true }
+            },
+            "required": ["verified_healthy"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "health_vector": {
+            "properties": {
+              "connected": { "const": true },
+              "authenticated": { "const": true },
+              "authorized": { "const": true },
+              "executable": { "const": true }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
