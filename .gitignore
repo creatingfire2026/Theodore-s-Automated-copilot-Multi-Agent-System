@@ -28,6 +28,10 @@ telemetry/
 secrets/
 private/
 credentials/
+/agents/*.local.md
+*.private.json
+secrets.json
+credentials.json
 
 # Exported app packages
 *.zip
@@ -37,7 +41,6 @@ credentials/
 # *.json — allowed (test fixtures, config schemas, example data with fictional values)
 # *.csv  — allowed (test fixtures and example data with fictional values)
 # *.svg  — allowed (diagrams and vector exports)
-# Exception: secrets.json, credentials.json, *.private.json are covered by the secrets/ and *.env rules above
 
 # Image exports (generated artifacts — regenerate from source instead)
 *.png
