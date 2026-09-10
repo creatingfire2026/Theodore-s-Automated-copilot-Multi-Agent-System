@@ -1,0 +1,12 @@
+{
+  "profile": "NULL-SENTINEL-TEST-ANCHOR-v1",
+  "warning": "TEST-ONLY KEY MATERIAL. NEVER ADMIT THIS KEY IN PRODUCTION.",
+  "anchor_key_id": "sentinel-root-test-key-01",
+  "seed_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+  "public_key_hex": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+  "algorithm": "Ed25519",
+  "canonicalization": "RFC8785-JCS",
+  "admitted_definition_hashes": {
+    "github_issue_writer": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832"
+  }
+}

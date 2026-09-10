@@ -1,0 +1,9 @@
+{
+  "vector_id": "VECTOR-006",
+  "description": "Observed definition hash differs from the admitted reference hash.",
+  "expected_primary_verdict": "VERSION_HASH_MISMATCH",
+  "expected_terminal_state": "BLOCKED",
+  "expected_gates": {"structure": "PASS", "cryptography": "PASS", "policy": "FAIL", "health": "NOT_EVALUATED"},
+  "expected_secondary_classifications": ["VERSION_DRIFT"],
+  "payload": {"capability_id": "github_issue_writer", "version": "1.2.0", "definition_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "health_vector": {"connected": true, "authenticated": true, "authorized": true, "executable": true, "verified_healthy": false}, "fallback_routes": [], "signature_envelope": {"anchor_key_id": "sentinel-root-test-key-01", "canonicalization": "RFC8785-JCS", "payload_hash": "sha256:f5e6e63b8d15ec8da25e0b1af8efcf78ca174ef3db54a763fa7b98e3c3f3f879", "signature_algorithm": "Ed25519", "timestamp": "2026-08-09T00:00:00Z", "signature": "6fa4ed002bc0b70888b78409529e4d82a7f12b20f2b4942f485f9ed8c5423f1fab38481860618ad2ba579f227cffc27d23ae7ebf80a369c9e53d845b8ebccc09"}}
+}

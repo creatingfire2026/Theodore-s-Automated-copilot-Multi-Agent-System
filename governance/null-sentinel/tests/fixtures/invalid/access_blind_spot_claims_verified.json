@@ -1,0 +1,55 @@
+{
+  "schema_version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "request_id": "req.invalid-blind-spot.001",
+  "created_at": "2026-08-09T04:10:00Z",
+  "requestor": {
+    "id": "agent.null",
+    "type": "AI_AGENT",
+    "display_name": "NULL Sentinel"
+  },
+  "target": {
+    "id": "workflow.pr3",
+    "type": "WORKFLOW",
+    "display_name": "PR #3 corrective workflow"
+  },
+  "intent": "Claim verification without observability.",
+  "success_condition": "This should be rejected.",
+  "current_state": "VERIFYING",
+  "requested_transition": "VERIFYING->ACCESS_BLIND_SPOT",
+  "state": "ACCESS_BLIND_SPOT",
+  "authority": {
+    "class": "EXECUTE_AND_REPORT",
+    "basis": "Execution already occurred.",
+    "approval_id": "approval.pr3.005"
+  },
+  "risk": {
+    "level": "LOW",
+    "reversible": true,
+    "blast_radius": "Branch-local only.",
+    "rollback_plan": "Revert the record."
+  },
+  "epistemic_status": "OBSERVED",
+  "decision": {
+    "result": "AUTHORIZE",
+    "reason": "Not relevant."
+  },
+  "execution": {
+    "attempted": true,
+    "operation_id": "op.invalid-blind-spot.001",
+    "actual_action": "Attempted the write.",
+    "result": "Receipt recorded."
+  },
+  "verification": {
+    "method": "Claimed verification method.",
+    "passed": true,
+    "evidence": [],
+    "observed_effect": "Claims success without observability.",
+    "residual_risk": ""
+  },
+  "previous_record_hash": null,
+  "record_hash": null
+}

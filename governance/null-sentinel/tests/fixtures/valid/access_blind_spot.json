@@ -1,0 +1,72 @@
+{
+  "schema_version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "request_id": "req.access-blind-spot.001",
+  "created_at": "2026-08-09T00:00:00Z",
+  "requestor": {
+    "id": "agent.null",
+    "type": "AI_AGENT",
+    "display_name": "NULL Sentinel"
+  },
+  "target": {
+    "id": "workflow.pr3",
+    "type": "WORKFLOW",
+    "display_name": "PR #3 corrective workflow"
+  },
+  "intent": "Observe a protected write path before promotion.",
+  "success_condition": "Capability outcome is classified with evidence.",
+  "current_state": "VERIFYING",
+  "requested_transition": "VERIFYING->ACCESS_BLIND_SPOT",
+  "state": "ACCESS_BLIND_SPOT",
+  "authority": {
+    "class": "ASK_FIRST",
+    "basis": "Protected write requires verification evidence.",
+    "approval_id": "approval.pr3.001"
+  },
+  "risk": {
+    "level": "LOW",
+    "reversible": true,
+    "blast_radius": "PR-local governance artifacts only.",
+    "rollback_plan": "Discard the corrective record and preserve the failed observation."
+  },
+  "evidence": [
+    {
+      "source": "workflow/logs",
+      "claim": "Execution receipt exists but post-write state is not observable.",
+      "status": "OBSERVED",
+      "timestamp": "2026-08-09T00:05:00Z",
+      "hash": null
+    }
+  ],
+  "epistemic_status": "OBSERVED",
+  "decision": {
+    "result": "AUTHORIZE",
+    "reason": "Observation is required before any success claim."
+  },
+  "execution": {
+    "attempted": true,
+    "operation_id": "op.access-blind-spot.001",
+    "actual_action": "Attempted protected write through the admitted workflow.",
+    "result": "Execution receipt recorded."
+  },
+  "verification": {
+    "method": "Read-after-write verification through allowed status endpoints.",
+    "passed": null,
+    "evidence": [
+      {
+        "source": "status-api",
+        "claim": "Observation path returned insufficient evidence to confirm the effect.",
+        "status": "OBSERVED",
+        "timestamp": "2026-08-09T00:06:00Z",
+        "hash": null
+      }
+    ],
+    "observed_effect": "Protected target state could not be observed from the available scope.",
+    "residual_risk": "Outcome remains unverified until direct observation is restored."
+  },
+  "previous_record_hash": null,
+  "record_hash": "0b63080a7e308c603578cc22ebeba6d6779ca29e1a50869272ccfad831f3be4e"
+}
