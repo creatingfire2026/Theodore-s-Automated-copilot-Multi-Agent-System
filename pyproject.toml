@@ -18,6 +18,9 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.hatch.build.targets.wheel]
+packages = ["concept_mesh"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
