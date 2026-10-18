@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "index_id": "agis-sentinel-system-index",
+  "repository": "creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+  "branch": "feat/agis-sentinel-system-index",
+  "integration_role": "Automated Copilot Multi-Agent System",
+  "purpose": "Multi-agent copilot for orchestration across financial intelligence, job-seeking automation, and toolchain optimization.",
+  "components": [
+    {
+      "id": "copilot-orchestration",
+      "name": "Copilot orchestration core",
+      "role": "Coordinates multi-agent work.",
+      "evidence": "Repository README high-level description only.",
+      "status": "claimed by README; implementation details not yet inspected"
+    },
+    {
+      "id": "domain-workflows",
+      "name": "Financial intelligence / job-seeking / toolchain workflows",
+      "role": "Potential domain-specific workflows.",
+      "evidence": "Repository README high-level description only.",
+      "status": "claimed by README; implementation details not yet inspected"
+    }
+  ],
+  "shared_contract": {
+    "identity_fields": [
+      "component_id",
+      "version",
+      "request_id",
+      "actor_id",
+      "created_at"
+    ],
+    "event_envelope": [
+      "event_id",
+      "event_type",
+      "source_component",
+      "timestamp",
+      "correlation_id",
+      "payload_schema_version",
+      "evidence_refs"
+    ],
+    "required_boundaries": [
+      "least privilege",
+      "fail closed on unknown authorization",
+      "auditable state transitions",
+      "idempotent request handling where applicable",
+      "explicit simulation versus live execution"
+    ],
+    "state_labels": [
+      "declared",
+      "observed",
+      "tested",
+      "deployed"
+    ],
+    "rule": "A README or configuration establishes documented intent, not runtime correctness or deployment."
+  },
+  "integration_plan": [
+    "Inventory source files, entry points, dependencies, and tests before implementing runtime links.",
+    "Define versioned adapters and schemas; do not create direct cross-repository imports without an explicit package boundary.",
+    "Route privileged actions through Sentinel policy evaluation and authenticated authorization.",
+    "Use request/correlation IDs and append evidence references to audit events.",
+    "Add contract tests for success, denial, malformed input, timeout, duplicate request, and unavailable dependency.",
+    "Keep live execution disabled by default until a separately reviewed policy explicitly authorizes it."
+  ],
+  "verification_status": "index documentation added; runtime integration not verified"
+}
