@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from sentinel import ActionRequest, AuthorityGrant, Decision, Sentinel
 
@@ -185,10 +185,7 @@ def test_concurrent_duplicate_key_authorizes_at_most_once():
 
 
 def test_expiry_with_tzinfo_but_no_utc_offset_is_blocked():
-    class InvalidTimezone(timezone.__class__):
-        pass
-
-    class NoOffset:
+    class NoOffset(tzinfo):
         def utcoffset(self, dt):
             return None
 
