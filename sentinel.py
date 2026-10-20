@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from threading import RLock
 from uuid import uuid4
 
 
@@ -72,8 +73,23 @@ class Sentinel:
 
     def __init__(self) -> None:
         self._decisions_by_key: dict[str, DecisionRecord] = {}
+        self._lock = RLock()
 
     def authorize(
+        self,
+        request: ActionRequest,
+        *,
+        human_approved: bool = False,
+        approval_ref: str = "",
+    ) -> DecisionRecord:
+        # Serialize check-and-record so concurrent threads cannot both authorize
+        # the same idempotency key within this process.
+        with self._lock:
+            return self._authorize_locked(
+                request, human_approved=human_approved, approval_ref=approval_ref
+            )
+
+    def _authorize_locked(
         self,
         request: ActionRequest,
         *,
@@ -154,7 +170,11 @@ class Sentinel:
             return decide(Decision.BLOCKED, "grant has invalid risk ceiling")
         if RISK_ORDER[request.risk] > RISK_ORDER[grant.risk_ceiling]:
             return decide(Decision.BLOCKED, "requested risk exceeds grant ceiling")
-        if not isinstance(grant.expires_at, datetime) or grant.expires_at.tzinfo is None:
+        if (
+            not isinstance(grant.expires_at, datetime)
+            or grant.expires_at.tzinfo is None
+            or grant.expires_at.utcoffset() is None
+        ):
             return decide(Decision.BLOCKED, "grant expiry must be timezone-aware")
         if grant.expires_at <= datetime.now(timezone.utc):
             return decide(Decision.BLOCKED, "authority grant has expired")
