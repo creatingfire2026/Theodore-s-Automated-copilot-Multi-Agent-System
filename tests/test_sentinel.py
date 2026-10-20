@@ -152,3 +152,22 @@ def test_verification_does_not_authorize_blocked_request():
     sentinel = Sentinel()
     blocked = sentinel.authorize(make_request(grant=None))
     assert sentinel.verify(blocked, success=True) is blocked
+
+
+def test_malformed_risk_type_is_blocked_without_exception():
+    result = Sentinel().authorize(make_request(risk=["critical"]))
+    assert result.decision is Decision.BLOCKED
+
+
+def test_malformed_idempotency_key_is_blocked_without_exception():
+    result = Sentinel().authorize(make_request(idempotency_key=["duplicate"]))
+    assert result.decision is Decision.BLOCKED
+
+
+def test_non_string_approval_reference_cannot_authorize_high_risk():
+    result = Sentinel().authorize(
+        make_request(risk="critical", idempotency_key="critical-malformed-ref"),
+        human_approved=True,
+        approval_ref=None,
+    )
+    assert result.decision is Decision.HUMAN_REVIEW
