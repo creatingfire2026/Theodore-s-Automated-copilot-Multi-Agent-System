@@ -82,20 +82,33 @@ class Sentinel:
     ) -> DecisionRecord:
         key = request.idempotency_key
 
+        # Reject malformed keys before dictionary membership checks.
+        if not isinstance(key, str) or not key.strip():
+            return DecisionRecord(
+                request.trace_id if isinstance(request.trace_id, str) else "",
+                Decision.BLOCKED,
+                "missing or invalid idempotency key",
+                "",
+            )
+
         # Once a key has a decision, retries cannot change that decision.
-        if key and key in self._decisions_by_key:
+        if key in self._decisions_by_key:
             prior = self._decisions_by_key[key]
             return DecisionRecord(
-                request.trace_id,
+                request.trace_id if isinstance(request.trace_id, str) else "",
                 Decision.BLOCKED,
                 f"idempotency key already used; prior decision was {prior.decision.value}",
                 key,
             )
 
         def decide(decision: Decision, reason: str) -> DecisionRecord:
-            record = DecisionRecord(request.trace_id, decision, reason, key)
-            if key:
-                self._decisions_by_key[key] = record
+            record = DecisionRecord(
+                request.trace_id if isinstance(request.trace_id, str) else "",
+                decision,
+                reason,
+                key,
+            )
+            self._decisions_by_key[key] = record
             return record
 
         if not isinstance(request.actor, str) or not request.actor.strip():
@@ -110,25 +123,34 @@ class Sentinel:
             return decide(Decision.BLOCKED, "empty or invalid action scope")
         if not isinstance(request.action, str) or not request.action.strip():
             return decide(Decision.BLOCKED, "missing action type")
-        if request.risk not in RISK_ORDER:
+        if not isinstance(request.risk, str) or request.risk not in RISK_ORDER:
             return decide(Decision.BLOCKED, "invalid risk label")
-        if not key or not key.strip():
-            return decide(Decision.BLOCKED, "missing idempotency key")
         if not request.preconditions_valid:
             return decide(Decision.BLOCKED, "preconditions are stale or failed")
 
         grant = request.grant
-        if grant is None:
+        if not isinstance(grant, AuthorityGrant):
             return decide(Decision.BLOCKED, "no explicit authority grant supplied")
-        if not grant.grant_id or not grant.actor_id:
+        if (
+            not isinstance(grant.grant_id, str) or not grant.grant_id.strip()
+            or not isinstance(grant.actor_id, str) or not grant.actor_id.strip()
+        ):
             return decide(Decision.BLOCKED, "grant identity is incomplete")
         if grant.actor_id != request.actor:
             return decide(Decision.BLOCKED, "grant actor does not match request actor")
+        if not isinstance(grant.allowed_actions, (tuple, list)) or any(
+            not isinstance(item, str) for item in grant.allowed_actions
+        ):
+            return decide(Decision.BLOCKED, "grant action allow-list is invalid")
         if request.action not in grant.allowed_actions:
             return decide(Decision.BLOCKED, "action is outside grant")
+        if not isinstance(grant.allowed_scope, (tuple, list)) or any(
+            not isinstance(item, str) for item in grant.allowed_scope
+        ):
+            return decide(Decision.BLOCKED, "grant scope is invalid")
         if not set(request.scope).issubset(set(grant.allowed_scope)):
             return decide(Decision.BLOCKED, "requested scope exceeds grant")
-        if grant.risk_ceiling not in RISK_ORDER:
+        if not isinstance(grant.risk_ceiling, str) or grant.risk_ceiling not in RISK_ORDER:
             return decide(Decision.BLOCKED, "grant has invalid risk ceiling")
         if RISK_ORDER[request.risk] > RISK_ORDER[grant.risk_ceiling]:
             return decide(Decision.BLOCKED, "requested risk exceeds grant ceiling")
@@ -138,7 +160,11 @@ class Sentinel:
             return decide(Decision.BLOCKED, "authority grant has expired")
 
         if request.risk in {"high", "critical"}:
-            if not human_approved or not approval_ref.strip():
+            if (
+                human_approved is not True
+                or not isinstance(approval_ref, str)
+                or not approval_ref.strip()
+            ):
                 return decide(
                     Decision.HUMAN_REVIEW,
                     "high-impact action requires explicit human approval reference",
@@ -149,7 +175,7 @@ class Sentinel:
     def verify(self, record: DecisionRecord, success: bool) -> DecisionRecord:
         if record.decision is not Decision.AUTHORIZED:
             return record
-        if success:
+        if success is True:
             return DecisionRecord(
                 record.trace_id, Decision.VERIFIED, "execution verified",
                 record.idempotency_key,
