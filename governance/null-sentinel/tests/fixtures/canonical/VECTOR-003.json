@@ -1,0 +1,9 @@
+{
+  "vector_id": "VECTOR-003",
+  "description": "Authenticated identity lacks required authorization.",
+  "expected_primary_verdict": "AUTHORIZATION_CHECK_FAILED",
+  "expected_terminal_state": "BLOCKED",
+  "expected_gates": {"structure": "PASS", "cryptography": "PASS", "policy": "FAIL", "health": "NOT_EVALUATED"},
+  "expected_secondary_classifications": ["PERMISSION_CHANGED"],
+  "payload": {"capability_id": "github_issue_writer", "version": "1.2.0", "definition_hash": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832", "health_vector": {"connected": true, "authenticated": true, "authorized": false, "executable": false, "verified_healthy": false}, "fallback_routes": [], "signature_envelope": {"anchor_key_id": "sentinel-root-test-key-01", "canonicalization": "RFC8785-JCS", "payload_hash": "sha256:00b7b12f60302fbdf2837ed0ccaeeeeaaff1fa78ece6ca8da114f804b60f981a", "signature_algorithm": "Ed25519", "timestamp": "2026-08-09T00:00:00Z", "signature": "a64a0d47333d8299391ff6767f40b654fb397f131ddbc2699ec2fe211a761fa1a448d35d2000b3e16d56a0cbf474330813a45713b6b758477798bdd4969ffd00"}}
+}

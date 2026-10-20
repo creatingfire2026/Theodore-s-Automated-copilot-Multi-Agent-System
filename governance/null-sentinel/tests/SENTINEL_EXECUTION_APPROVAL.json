@@ -1,0 +1,44 @@
+{
+  "record_type": "NULL_SENTINEL_EXECUTION_APPROVAL",
+  "record_version": "1.0.0",
+  "approved_snapshot_commit": "a764b088840ffbbbb42cc62ab05b5610dcebae0f",
+  "pull_request": 3,
+  "branch": "null-sentinel-v1",
+  "authority": {
+    "schema_path": "governance/null-sentinel/schemas/capability_registry.schema.json",
+    "conformance_spec_path": "governance/null-sentinel/NULL_CONFORMANCE_SPEC.md",
+    "gate_order": ["STRUCTURE", "CRYPTOGRAPHY_AND_TRUST", "POLICY", "HEALTH"],
+    "trust_resolution_gate": 2,
+    "trust_failure_verdict": "TRUST_FAILURE",
+    "trust_failure_terminal_state": "UNRESOLVED"
+  },
+  "approval_state": "AUTHORIZED_TO_EXECUTE_CONFORMANCE_VERIFICATION",
+  "verification_state": "NOT_YET_RECORDED_AT_APPROVAL_COMMIT",
+  "release_state": "BLOCKED_PENDING_REPRODUCIBLE_8_OF_8_EXECUTION_RECORD",
+  "merge_state": "NOT_APPROVED_BY_THIS_RECORD",
+  "tag_state": "NOT_APPROVED_BY_THIS_RECORD",
+  "required_execution": {
+    "runner_path": "governance/null-sentinel/tests/run_conformance.py",
+    "fixture_manifest_path": "governance/null-sentinel/tests/fixtures/canonical/KEY_MANIFEST.json",
+    "required_vectors": [
+      "VECTOR-001.json",
+      "VECTOR-002.json",
+      "VECTOR-003.json",
+      "VECTOR-004.json",
+      "VECTOR-005.json",
+      "VECTOR-006.json",
+      "VECTOR-007.json",
+      "VECTOR-008.json"
+    ],
+    "required_result": "8/8 Passed | 0 Divergences",
+    "execution_record_path": "governance/null-sentinel/tests/CONFORMANCE_EXECUTION_RECORD.txt"
+  },
+  "sentinel_rules": [
+    "Execute only against committed bytes from the approved snapshot or an explicitly superseding approval record.",
+    "Do not alter expected vector verdicts to obtain a passing run.",
+    "Any divergence blocks release, tag, and execution admission progression.",
+    "A passing transcript is not evidence until the execution record is committed and references the exact tested commit SHA.",
+    "Unknown anchor_key_id fails Gate 2 as TRUST_FAILURE with terminal state UNRESOLVED.",
+    "No baseline release tag is approved until cross-validator TypeScript/Rust verification is complete."
+  ]
+}

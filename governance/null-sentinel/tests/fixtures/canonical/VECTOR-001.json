@@ -1,0 +1,23 @@
+{
+  "vector_id": "VECTOR-001",
+  "description": "All gates pass with a valid signature and healthy state.",
+  "expected_primary_verdict": "ACCEPT",
+  "expected_terminal_state": "EXECUTION_ADMISSIBLE",
+  "expected_gates": {"structure": "PASS", "cryptography": "PASS", "policy": "PASS", "health": "PASS"},
+  "expected_secondary_classifications": [],
+  "payload": {
+    "capability_id": "github_issue_writer",
+    "version": "1.2.0",
+    "definition_hash": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832",
+    "health_vector": {"connected": true, "authenticated": true, "authorized": true, "executable": true, "verified_healthy": true},
+    "fallback_routes": [],
+    "signature_envelope": {
+      "anchor_key_id": "sentinel-root-test-key-01",
+      "canonicalization": "RFC8785-JCS",
+      "payload_hash": "sha256:f89c0c29f8e508e7239c2009c9320a81e7c28f4b90c828ec21cec3e384266036",
+      "signature_algorithm": "Ed25519",
+      "timestamp": "2026-08-09T00:00:00Z",
+      "signature": "2a2e9abae6d55aeffe2eb98eb3878d0d7763d885662c66fbcc0b3c34565654f2ef29174265e9b81ef1fb65a74825321931653088a1509bfaa879469994c18403"
+    }
+  }
+}

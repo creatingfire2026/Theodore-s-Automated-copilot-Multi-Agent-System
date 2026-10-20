@@ -1,0 +1,9 @@
+{
+  "vector_id": "VECTOR-002",
+  "description": "verified_healthy=true while connected=false; health conjunction violation.",
+  "expected_primary_verdict": "INVARIANT_HEALTH_VECTOR_MISMATCH",
+  "expected_terminal_state": "BLOCKED",
+  "expected_gates": {"structure": "PASS", "cryptography": "PASS", "policy": "PASS", "health": "FAIL"},
+  "expected_secondary_classifications": [],
+  "payload": {"capability_id": "github_issue_writer", "version": "1.2.0", "definition_hash": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832", "health_vector": {"connected": false, "authenticated": true, "authorized": true, "executable": true, "verified_healthy": true}, "fallback_routes": [], "signature_envelope": {"anchor_key_id": "sentinel-root-test-key-01", "canonicalization": "RFC8785-JCS", "payload_hash": "sha256:f0e1be9aad05a45977afb380747152b88052e7c60debaa505000aa567369240b", "signature_algorithm": "Ed25519", "timestamp": "2026-08-09T00:00:00Z", "signature": "fc0159bf5162fe1d38774fbec5162659ab6f46a948c9be02414fdd4f33e6c67f5b91eae2c984eb497434a32c3f318061e46f2df6162655aedbc1d54676576e09"}}
+}
