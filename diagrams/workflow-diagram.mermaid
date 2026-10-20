@@ -1,0 +1,57 @@
+flowchart TD
+    Start(["⏰ 07:00 — Scheduled Trigger"])
+
+    Collect["Orchestration Agent\nrequests summaries\nfrom all 4 agents"]
+
+    AgentWait{"All agents\nresponded?"}
+    Timeout["Mark missing sections\nas ⚠ Data unavailable"]
+
+    Build["Build Daily Brief\n─────────────────\n📊 Financial Status\n💼 Income Opportunities\n🔧 System Health\n✅ Actions Requiring Approval"]
+
+    Deliver["Deliver Daily Brief\nto Theodore\n(Email / Teams / Chat)"]
+
+    Await{"User response\nreceived within\n4 hours?"}
+
+    AutoDecline["Auto-decline all items\nLog: Timeout\nEnd cycle"]
+
+    Parse["Parse Yes/No response\nfor each numbered item"]
+
+    Route{"For each item:"}
+
+    Approved["Item = Yes\nForward to\nAutomation Agent"]
+
+    Declined["Item = No\nLog: User declined\nDefer to next cycle"]
+
+    Execute["Automation Agent\nexecutes approved\nPower Automate flows"]
+
+    Confirm["Send completion\nconfirmation\nto Theodore"]
+
+    Log["Write all decisions\nand outcomes to\nAudit Log"]
+
+    End(["✅ Daily Brief cycle complete"])
+
+    Start --> Collect
+    Collect --> AgentWait
+    AgentWait -->|"Yes"| Build
+    AgentWait -->|"No (timeout 5 min)"| Timeout
+    Timeout --> Build
+    Build --> Deliver
+    Deliver --> Await
+    Await -->|"No response in 4h"| AutoDecline
+    AutoDecline --> Log
+    Await -->|"Response received"| Parse
+    Parse --> Route
+    Route -->|"Approved"| Approved
+    Route -->|"Declined"| Declined
+    Approved --> Execute
+    Execute --> Confirm
+    Confirm --> Log
+    Declined --> Log
+    Log --> End
+
+    style Start fill:#107C10,color:#fff,stroke:#0A5E0A
+    style End fill:#107C10,color:#fff,stroke:#0A5E0A
+    style Build fill:#0078D4,color:#fff,stroke:#005A9E
+    style Execute fill:#038387,color:#fff,stroke:#025F61
+    style AutoDecline fill:#E81123,color:#fff,stroke:#A4262C
+    style Log fill:#CA5010,color:#fff,stroke:#9E3D0A

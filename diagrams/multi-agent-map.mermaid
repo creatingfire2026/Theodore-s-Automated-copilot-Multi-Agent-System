@@ -1,0 +1,52 @@
+graph TD
+    User["👤 Theodore (User)"]
+
+    OA["Orchestration Agent\n(Daily Brief · Approvals · Logging)"]
+
+    FSA["Financial Stability Agent\n(Score · Risks · Projections)"]
+    JSA["Job-Search Agent\n(Scan · Match · Draft)"]
+    DTA["Development Tool Agent\n(Health · Audit · Optimize)"]
+    AA["Automation Agent\n(Execute · Notify · Log)"]
+
+    Excel["📊 Excel Finance Workbook"]
+    PBI["📈 Power BI Dataset"]
+    JobBoards["🌐 Job Board Feeds"]
+    SkillProfile["📋 Skill Profile"]
+    RepoManifests["📁 Repository Manifests"]
+    AdvisoryFeeds["🔐 Advisory Feeds"]
+    PA["⚡ Power Automate Flows"]
+    AuditLog["📝 Audit Log"]
+
+    User -->|"Yes/No responses"| OA
+    OA -->|"Daily Brief"| User
+
+    OA -->|"Trigger at 07:00"| FSA
+    OA -->|"Trigger at 07:00"| JSA
+    OA -->|"Trigger at 07:00"| DTA
+    OA -->|"Approved actions"| AA
+
+    FSA -->|"Score · Risks · Approval items"| OA
+    JSA -->|"Top opps · Approval items"| OA
+    DTA -->|"Health status · Approval items"| OA
+    AA -->|"Execution report"| OA
+
+    FSA -.->|"Escalate: score below 70"| OA
+    JSA -.->|"Escalate: no matches for 3 days"| OA
+    DTA -.->|"Escalate Critical CVE"| OA
+    AA -.->|"Escalate flow failure"| OA
+
+    FSA --- Excel
+    FSA --- PBI
+    JSA --- JobBoards
+    JSA --- SkillProfile
+    DTA --- RepoManifests
+    DTA --- AdvisoryFeeds
+    AA --- PA
+    AA --- AuditLog
+
+    style OA fill:#0078D4,color:#fff,stroke:#005A9E
+    style User fill:#107C10,color:#fff,stroke:#0A5E0A
+    style FSA fill:#E81123,color:#fff,stroke:#A4262C
+    style JSA fill:#744DA9,color:#fff,stroke:#5C3A8A
+    style DTA fill:#CA5010,color:#fff,stroke:#9E3D0A
+    style AA fill:#038387,color:#fff,stroke:#025F61
