@@ -171,3 +171,27 @@ def test_non_string_approval_reference_cannot_authorize_high_risk():
         approval_ref=None,
     )
     assert result.decision is Decision.HUMAN_REVIEW
+
+
+def test_concurrent_duplicate_key_authorizes_at_most_once():
+    from concurrent.futures import ThreadPoolExecutor
+
+    sentinel = Sentinel()
+    requests = [make_request() for _ in range(12)]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(sentinel.authorize, requests))
+    assert sum(result.decision is Decision.AUTHORIZED for result in results) == 1
+    assert sum(result.decision is Decision.BLOCKED for result in results) == 11
+
+
+def test_expiry_with_tzinfo_but_no_utc_offset_is_blocked():
+    class InvalidTimezone(timezone.__class__):
+        pass
+
+    class NoOffset:
+        def utcoffset(self, dt):
+            return None
+
+    invalid_expiry = datetime(2099, 1, 1, tzinfo=NoOffset())
+    result = Sentinel().authorize(make_request(grant=make_grant(expires_at=invalid_expiry)))
+    assert result.decision is Decision.BLOCKED
