@@ -76,11 +76,38 @@ def test_uncertain_outcome_is_not_success_and_blocks_dependency():
     assert result[1].status is TaskStatus.SKIPPED
 
 
-def test_missing_evidence_or_acceptance_criteria_fails():
+def test_missing_acceptance_criteria_blocks_before_executor():
+    calls = []
     result = MasterOrchestrator().run(
         [task(acceptance_criteria=())],
-        executor=lambda t: ExecutionOutcome(True, ("artifact://e1",)), dry_run=False)
+        executor=lambda t: (calls.append(t) or ExecutionOutcome(True, ("artifact://e1",))),
+        dry_run=False,
+    )
+    assert calls == []
+    assert result[0].status is TaskStatus.BLOCKED
+    assert "acceptance criteria" in result[0].reason
+
+
+def test_blank_acceptance_criteria_blocks_before_executor():
+    calls = []
+    result = MasterOrchestrator().run(
+        [task(acceptance_criteria=("   ",))],
+        executor=lambda t: (calls.append(t) or ExecutionOutcome(True, ("artifact://e1",))),
+        dry_run=False,
+    )
+    assert calls == []
+    assert result[0].status is TaskStatus.BLOCKED
+
+
+def test_missing_evidence_fails_after_executor_invocation():
+    calls = []
+    result = MasterOrchestrator().run(
+        [task()],
+        executor=lambda t: (calls.append(t) or ExecutionOutcome(True, ())),
+        dry_run=False,
+    )
     assert result[0].status is TaskStatus.FAILED
+    assert len(calls) == 1
 
 
 def test_duplicate_ids_and_dependency_cycles_rejected():
