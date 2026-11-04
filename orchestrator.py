@@ -160,6 +160,17 @@ class MasterOrchestrator:
                     "dependency not verified: " + ", ".join(failed_deps))
                 continue
 
+            criteria = task.acceptance_criteria
+            if (
+                not isinstance(criteria, (tuple, list))
+                or not criteria
+                or any(not isinstance(item, str) or not item.strip() for item in criteria)
+            ):
+                run_records[task.task_id] = self._record(
+                    task, TaskStatus.BLOCKED,
+                    "missing or invalid acceptance criteria")
+                continue
+
             request = ActionRequest(
                 actor=task.actor_id,
                 intent=task.intent,
