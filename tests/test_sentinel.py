@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone, tzinfo
 
-from sentinel import ActionRequest, AuthorityGrant, Decision, Sentinel
+from sentinel import ActionRequest, AuthorityGrant, Decision, DecisionRecord, Sentinel
 
 
 def make_grant(
@@ -141,11 +141,72 @@ def test_denied_key_cannot_be_reused_to_bypass_denial():
     assert "already used" in retry.reason
 
 
-def test_verification_failure_is_not_success():
+def test_verification_failure_is_terminal():
     sentinel = Sentinel()
     authorized = sentinel.authorize(make_request())
-    result = sentinel.verify(authorized, success=False)
-    assert result.decision is Decision.FAILED
+    executing = sentinel.begin_execution(authorized)
+    assert executing.decision is Decision.EXECUTING
+
+    failed = sentinel.verify(executing, success=False)
+    replayed_success = sentinel.verify(executing, success=True)
+    assert failed.decision is Decision.FAILED
+    assert replayed_success.decision is Decision.FAILED
+
+
+def test_verification_success_is_terminal():
+    sentinel = Sentinel()
+    authorized = sentinel.authorize(make_request())
+    executing = sentinel.begin_execution(authorized)
+
+    verified = sentinel.verify(executing, success=True)
+    replayed_failure = sentinel.verify(executing, success=False)
+    assert verified.decision is Decision.VERIFIED
+    assert replayed_failure.decision is Decision.VERIFIED
+
+
+def test_authorized_record_cannot_be_verified_before_execution():
+    sentinel = Sentinel()
+    authorized = sentinel.authorize(make_request())
+
+    result = sentinel.verify(authorized, success=True)
+    assert result.decision is Decision.BLOCKED
+    assert sentinel.begin_execution(authorized).decision is Decision.EXECUTING
+
+
+def test_execution_authorization_can_be_consumed_only_once():
+    sentinel = Sentinel()
+    authorized = sentinel.authorize(make_request())
+
+    executing = sentinel.begin_execution(authorized)
+    duplicate_start = sentinel.begin_execution(authorized)
+    assert executing.decision is Decision.EXECUTING
+    assert duplicate_start.decision is Decision.BLOCKED
+    assert sentinel.verify(executing, success=True).decision is Decision.VERIFIED
+
+
+def test_uncertain_execution_cannot_later_be_verified():
+    sentinel = Sentinel()
+    authorized = sentinel.authorize(make_request())
+    executing = sentinel.begin_execution(authorized)
+
+    uncertain = sentinel.mark_uncertain(executing, "remote outcome unknown")
+    replayed_success = sentinel.verify(executing, success=True)
+    assert uncertain.decision is Decision.UNCERTAIN
+    assert replayed_success.decision is Decision.UNCERTAIN
+
+
+def test_forged_execution_record_cannot_finalize_authorization():
+    sentinel = Sentinel()
+    authorized = sentinel.authorize(make_request())
+    executing = sentinel.begin_execution(authorized)
+    forged = DecisionRecord(
+        executing.trace_id, Decision.EXECUTING, "forged record",
+        executing.idempotency_key,
+    )
+
+    rejected = sentinel.verify(forged, success=True)
+    assert rejected.decision is Decision.BLOCKED
+    assert sentinel.verify(executing, success=True).decision is Decision.VERIFIED
 
 
 def test_verification_does_not_authorize_blocked_request():

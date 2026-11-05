@@ -209,36 +209,51 @@ class MasterOrchestrator:
                     decision_record.decision)
                 continue
 
+            execution_record = self.sentinel.begin_execution(decision_record)
+            if execution_record.decision is not Decision.EXECUTING:
+                run_records[task.task_id] = self._record(
+                    task, TaskStatus.BLOCKED, execution_record.reason,
+                    execution_record.decision)
+                continue
+
             try:
                 self._record(task, TaskStatus.EXECUTING, "executor invoked after authorization",
-                             decision_record.decision)
+                             execution_record.decision)
                 outcome = executor(task)  # type: ignore[misc]
                 if not isinstance(outcome, ExecutionOutcome):
-                    run_records[task.task_id] = self._record(
-                        task, TaskStatus.UNCERTAIN,
+                    uncertain = self.sentinel.mark_uncertain(
+                        execution_record,
                         "executor returned an invalid outcome; side effects frozen",
-                        Decision.UNCERTAIN)
-                elif outcome.uncertain:
+                    )
                     run_records[task.task_id] = self._record(
-                        task, TaskStatus.UNCERTAIN,
+                        task, TaskStatus.UNCERTAIN, uncertain.reason,
+                        uncertain.decision)
+                elif outcome.uncertain:
+                    uncertain = self.sentinel.mark_uncertain(
+                        execution_record,
                         outcome.summary or "outcome uncertain; side effects frozen",
-                        Decision.UNCERTAIN, outcome.evidence_refs)
+                    )
+                    run_records[task.task_id] = self._record(
+                        task, TaskStatus.UNCERTAIN, uncertain.reason,
+                        uncertain.decision, outcome.evidence_refs)
                 elif outcome.success is True and outcome.evidence_refs and task.acceptance_criteria:
-                    verified = self.sentinel.verify(decision_record, success=True)
+                    verified = self.sentinel.verify(execution_record, success=True)
                     run_records[task.task_id] = self._record(
                         task, TaskStatus.VERIFIED,
                         "executor reported success with evidence references; acceptance criteria recorded",
                         verified.decision, outcome.evidence_refs)
                 else:
-                    failed = self.sentinel.verify(decision_record, success=False)
+                    failed = self.sentinel.verify(execution_record, success=False)
                     run_records[task.task_id] = self._record(
                         task, TaskStatus.FAILED,
                         outcome.summary or "success, evidence, or acceptance criteria missing",
                         failed.decision, outcome.evidence_refs)
             except Exception as exc:  # Fail closed; never retry implicitly.
-                run_records[task.task_id] = self._record(
-                    task, TaskStatus.UNCERTAIN,
+                uncertain = self.sentinel.mark_uncertain(
+                    execution_record,
                     f"executor raised {type(exc).__name__}; outcome requires reconciliation",
-                    Decision.UNCERTAIN)
+                )
+                run_records[task.task_id] = self._record(
+                    task, TaskStatus.UNCERTAIN, uncertain.reason, uncertain.decision)
 
         return tuple(run_records[task.task_id] for task in ordered)

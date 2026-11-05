@@ -10,6 +10,7 @@
 - Executor failures and ambiguous outcomes become `UNCERTAIN`; no automatic retry is performed.
 - Task-state and policy-decision events are correlated by task and trace IDs. The exposed event collection returns defensive copies.
 - Verification requires an executor-reported success, evidence references, and acceptance criteria. This is a local contract, not independent proof that an external effect occurred.
+- Execution decisions follow a single-use lifecycle: `AUTHORIZED → EXECUTING → VERIFIED | FAILED | UNCERTAIN`. The first terminal outcome is immutable; uncertain outcomes cannot later be reclassified as verified.
 
 ## CI
 

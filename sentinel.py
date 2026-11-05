@@ -192,18 +192,82 @@ class Sentinel:
 
         return decide(Decision.AUTHORIZED, "policy checks passed")
 
-    def verify(self, record: DecisionRecord, success: bool) -> DecisionRecord:
-        if record.decision is not Decision.AUTHORIZED:
-            return record
-        if success is True:
-            return DecisionRecord(
-                record.trace_id, Decision.VERIFIED, "execution verified",
-                record.idempotency_key,
+    def begin_execution(self, record: DecisionRecord) -> DecisionRecord:
+        """Consume an authorization exactly once and enter EXECUTING."""
+        if not isinstance(record, DecisionRecord):
+            return DecisionRecord("", Decision.BLOCKED, "invalid authorization record")
+
+        key = record.idempotency_key
+        if not isinstance(key, str) or not key.strip():
+            return DecisionRecord(record.trace_id, Decision.BLOCKED, "invalid authorization key")
+        with self._lock:
+            current = self._decisions_by_key.get(key)
+            if current is None:
+                return DecisionRecord(
+                    record.trace_id, Decision.BLOCKED, "unknown authorization record", key
+                )
+            if current.decision in {Decision.VERIFIED, Decision.FAILED, Decision.UNCERTAIN}:
+                return current
+            if current == record and current.decision in {Decision.BLOCKED, Decision.HUMAN_REVIEW}:
+                return current
+            if current != record or current.decision is not Decision.AUTHORIZED:
+                return DecisionRecord(
+                    record.trace_id, Decision.BLOCKED,
+                    "authorization record is stale or already consumed", key,
+                )
+
+            executing = DecisionRecord(
+                record.trace_id, Decision.EXECUTING, "execution started", key
             )
-        return DecisionRecord(
-            record.trace_id, Decision.FAILED, "execution failed verification",
-            record.idempotency_key,
+            self._decisions_by_key[key] = executing
+            return executing
+
+    def _complete_execution(
+        self, record: DecisionRecord, decision: Decision, reason: str
+    ) -> DecisionRecord:
+        """Apply one terminal outcome to the currently active execution record."""
+        if not isinstance(record, DecisionRecord):
+            return DecisionRecord("", Decision.BLOCKED, "invalid execution record")
+
+        key = record.idempotency_key
+        if not isinstance(key, str) or not key.strip():
+            return DecisionRecord(record.trace_id, Decision.BLOCKED, "invalid execution key")
+        with self._lock:
+            current = self._decisions_by_key.get(key)
+            if current is None:
+                return DecisionRecord(
+                    record.trace_id, Decision.BLOCKED, "unknown execution record", key
+                )
+            # Terminal outcomes are immutable: replay returns the first outcome.
+            if current.decision in {Decision.VERIFIED, Decision.FAILED, Decision.UNCERTAIN}:
+                return current
+            if current == record and current.decision in {Decision.BLOCKED, Decision.HUMAN_REVIEW}:
+                return current
+            if current != record or current.decision is not Decision.EXECUTING:
+                return DecisionRecord(
+                    record.trace_id, Decision.BLOCKED,
+                    "execution record is stale or not active", key,
+                )
+
+            final = DecisionRecord(record.trace_id, decision, reason, key)
+            self._decisions_by_key[key] = final
+            return final
+
+    def verify(self, record: DecisionRecord, success: bool) -> DecisionRecord:
+        """Finalize an active execution; the first outcome is immutable."""
+        if success is True:
+            return self._complete_execution(record, Decision.VERIFIED, "execution verified")
+        return self._complete_execution(
+            record, Decision.FAILED, "execution failed verification"
         )
+
+    def mark_uncertain(
+        self, record: DecisionRecord, reason: str = "execution outcome uncertain"
+    ) -> DecisionRecord:
+        """Close an active execution as uncertain; it cannot later become verified."""
+        if not isinstance(reason, str) or not reason.strip():
+            reason = "execution outcome uncertain"
+        return self._complete_execution(record, Decision.UNCERTAIN, reason)
 
 
 if __name__ == "__main__":

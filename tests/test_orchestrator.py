@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from orchestrator import ExecutionOutcome, MasterOrchestrator, TaskSpec, TaskStatus
-from sentinel import AuthorityGrant
+from sentinel import AuthorityGrant, Decision, Sentinel
 
 
 def grant(actor="worker"):
@@ -74,6 +74,46 @@ def test_uncertain_outcome_is_not_success_and_blocks_dependency():
         dry_run=False)
     assert result[0].status is TaskStatus.UNCERTAIN
     assert result[1].status is TaskStatus.SKIPPED
+
+
+class RecordingSentinel(Sentinel):
+    def __init__(self):
+        super().__init__()
+        self.execution_record = None
+
+    def begin_execution(self, record):
+        self.execution_record = super().begin_execution(record)
+        return self.execution_record
+
+
+def test_uncertain_executor_outcome_is_terminal_in_sentinel():
+    sentinel = RecordingSentinel()
+    result = MasterOrchestrator(sentinel).run(
+        [task()],
+        executor=lambda t: ExecutionOutcome(
+            False, uncertain=True, summary="remote result unavailable"
+        ),
+        dry_run=False,
+    )
+
+    assert result[0].status is TaskStatus.UNCERTAIN
+    assert result[0].decision is Decision.UNCERTAIN
+    replayed_success = sentinel.verify(sentinel.execution_record, success=True)
+    assert replayed_success.decision is Decision.UNCERTAIN
+
+
+def test_executor_exception_finalizes_sentinel_as_uncertain():
+    sentinel = RecordingSentinel()
+
+    def executor(_task):
+        raise TimeoutError("response lost after request")
+
+    result = MasterOrchestrator(sentinel).run(
+        [task()], executor=executor, dry_run=False
+    )
+
+    assert result[0].status is TaskStatus.UNCERTAIN
+    assert sentinel.verify(sentinel.execution_record, success=True).decision is Decision.UNCERTAIN
 
 
 def test_missing_acceptance_criteria_blocks_before_executor():
