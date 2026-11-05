@@ -208,6 +208,12 @@ Run dry-run and simulated scenarios first, then an isolated staging environment 
 - Secret scanning and dependency/security checks run in CI.
 - Documentation clearly distinguishes simulated, tested, integrated, and deployed behavior.
 
-## 11. Current implementation boundary
+## 11. Implementation status (2026-10-20)
 
-This document defines the target governance contract. It does not claim that all roles, council quorum, grant signing, persistent event sourcing, or production controls are implemented. The existing `sentinel.py` is a minimal deterministic policy gate; the next engineering step is to translate these contracts into small, testable code changes and verify them in CI.
+Implemented on the Sentinel v1 feature branch:
+- `sentinel.py`: deterministic grant/action/scope/risk/expiry/precondition/idempotency checks and high-risk human-review gate.
+- `orchestrator.py`: bounded task plans, dependency validation, sequential scheduling, Sentinel-before-executor enforcement, dry-run default, event records, and fail-closed handling of failed/uncertain outcomes.
+- `tests/test_sentinel.py` and `tests/test_orchestrator.py`: regression coverage for policy denials, execution gating, dependencies, task bounds, evidence requirements, and uncertainty.
+- `.github/workflows/sentinel-ci.yml`: compile and pytest workflow.
+
+This is a tested-code target, not a production deployment. Grant and approval authenticity, durable/tamper-evident event storage, live evidence verification, revocation, distributed concurrency control, secrets management, and real external integrations are not implemented by these modules. See `MASTER_ORCHESTRATOR.md` for precise limits and acceptance gates.
