@@ -124,11 +124,13 @@ Every consequential action must carry the following fields:
   "evidence_refs": [],
   "approval_refs": [],
   "idempotency_key": "stable operation key",
+  "aud": "receiving-agent-id",
+  "test_result": { "run_id": "ci run id", "conclusion": "success|failure|cancelled|startup_failure|..." },
   "decision": "pending"
 }
 ```
 
-Missing identity, scope, grant, trace ID, or required evidence is a rejection condition. Never place raw secrets in the event log; store references and redacted metadata.
+Missing identity, scope, grant, trace ID, audience (`aud` not equal to the receiving agent), or required evidence is a rejection condition. `VERIFIED` additionally requires a `test_result` whose conclusion is `success`. Never place raw secrets in the event log; store references and redacted metadata.
 
 ## 6. State machine
 
