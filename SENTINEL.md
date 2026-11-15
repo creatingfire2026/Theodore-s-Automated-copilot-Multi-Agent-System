@@ -47,6 +47,8 @@ Every consequential action should include:
 - `scope`, `authority_grant_id`, `risk`
 - `preconditions`, `evidence_refs`, `approval_refs`
 - `idempotency_key`, `decision`
+- `aud` — required: the receiving agent's ID. Sentinel blocks a missing or mismatched audience and logs the reason (proposed AIP-001 amendment).
+- `test_result` — `{ "run_id", "conclusion" }` CI attestation. Only `conclusion: "success"` with a run ID can move an action to `VERIFIED`; anything else, including `startup_failure`, is `FAILED`.
 
 Never place raw credentials in prompts or logs; use redacted metadata and secret references.
 
