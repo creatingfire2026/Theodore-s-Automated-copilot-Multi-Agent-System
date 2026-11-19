@@ -241,10 +241,11 @@ def test_github_actions_verifier_rejects_wrong_commit_or_workflow():
         repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
         workflow_path=".github/workflows/sentinel-ci.yml",
         workflow_id=390163888,
+        expected_commit_sha="abc123",
         token="fixture-token",
         transport=transport,
     )
-    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+    assert not verifier(TestResult("77", "success"), req())
 
 
 def test_github_actions_verifier_rejects_skipped_or_failed_test_step():
@@ -258,10 +259,11 @@ def test_github_actions_verifier_rejects_skipped_or_failed_test_step():
         repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
         workflow_path=".github/workflows/sentinel-ci.yml",
         workflow_id=390163888,
+        expected_commit_sha="abc123",
         token="fixture-token",
         transport=transport,
     )
-    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+    assert not verifier(TestResult("77", "success"), req())
 
 
 def test_github_actions_verifier_fails_closed_without_token_or_commit():
@@ -273,7 +275,7 @@ def test_github_actions_verifier_fails_closed_without_token_or_commit():
         token="",
         transport=lambda url, headers, timeout: {},
     )
-    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+    assert not verifier(TestResult("77", "success"), req())
     verifier.token = "fixture-token"
     verifier.expected_commit_sha = ""
     assert not verifier(TestResult("77", "success"), req())
