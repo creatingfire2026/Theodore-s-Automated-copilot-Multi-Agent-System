@@ -39,7 +39,6 @@ class ActionRequest:
     trace_id: str = field(default_factory=lambda: str(uuid4()))
     aud: str = ""
     test_result: TestResult | None = None
-    expected_commit_sha: str | None = None
     protected_dissent_node: str | None = None
     protected_dissent_id: str | None = None
 
