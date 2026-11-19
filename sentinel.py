@@ -1,9 +1,4 @@
-"""Minimal deterministic Sentinel policy engine.
-
-The engine validates action envelopes before execution. It is deliberately
-small: model inference belongs outside the authority mechanism.
-"""
-
+"""Minimal deterministic Sentinel policy engine."""
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,20 +21,10 @@ class Decision(str, Enum):
 
 @dataclass(frozen=True)
 class TestResult:
-    """CI attestation carried by an envelope (AIP-001 amendment).
-
-    Only conclusion == "success" with a non-empty run_id counts as verified. Anything
-    else (failure, cancelled, startup_failure, skipped, missing) does not.
-    """
-
-    __test__: ClassVar[bool] = False  # not a pytest test class
-
+    """Untrusted CI run reference; fields are claims, not proof."""
+    __test__: ClassVar[bool] = False
     run_id: str
     conclusion: str
-
-    @property
-    def passed(self) -> bool:
-        return bool(self.run_id) and self.conclusion == "success"
 
 
 @dataclass
@@ -52,8 +37,6 @@ class ActionRequest:
     preconditions: list[str] = field(default_factory=list)
     evidence: list[Any] = field(default_factory=list)
     trace_id: str = field(default_factory=lambda: str(uuid4()))
-    # Required (AIP-001 amendment): the agent this envelope is addressed to. Defaults to
-    # empty so that an envelope without an audience is rejected rather than accepted.
     aud: str = ""
     test_result: TestResult | None = None
 
@@ -65,14 +48,11 @@ class DecisionRecord:
     reason: str
 
 
+RunEvidenceVerifier = Callable[[TestResult, ActionRequest | None], bool]
+
+
 class Sentinel:
-    """Small policy gate with explicit, inspectable decisions.
-
-    ``agent_id`` names the receiving agent this gate protects; envelopes must carry a
-    matching ``aud``. ``on_reject`` (optional) receives every rejected request and its
-    decision record, e.g. to write a Ghost in the Gate tombstone.
-    """
-
+    """Policy gate. VERIFIED requires an independently configured CI verifier."""
     HIGH_RISK = {"high", "critical"}
 
     def __init__(
@@ -80,21 +60,19 @@ class Sentinel:
         agent_id: str = "sentinel",
         *,
         on_reject: Callable[[ActionRequest, DecisionRecord], None] | None = None,
+        run_evidence_verifier: RunEvidenceVerifier | None = None,
     ) -> None:
         if not agent_id:
-            raise ValueError("Sentinel needs a non-empty agent_id to check envelope audience")
+            raise ValueError("Sentinel needs a non-empty agent_id")
         self.agent_id = agent_id
         self.on_reject = on_reject
+        self.run_evidence_verifier = run_evidence_verifier
 
     def _reject(self, request: ActionRequest, decision: Decision, reason: str) -> DecisionRecord:
         record = DecisionRecord(request.trace_id, decision, reason)
         logger.warning(
             "sentinel %s trace=%s actor=%s aud=%r: %s",
-            decision.value,
-            request.trace_id,
-            request.actor,
-            request.aud,
-            reason,
+            decision.value, request.trace_id, request.actor, request.aud, reason,
         )
         if self.on_reject is not None:
             self.on_reject(request, record)
@@ -105,23 +83,17 @@ class Sentinel:
             return self._reject(request, Decision.BLOCKED, "missing audience (aud)")
         if request.aud != self.agent_id:
             return self._reject(
-                request,
-                Decision.BLOCKED,
+                request, Decision.BLOCKED,
                 f"wrong audience: envelope addressed to {request.aud!r}, receiver is {self.agent_id!r}",
             )
-
         if not request.actor or not request.intent or not request.trace_id:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "missing attribution or intent")
-
         if not request.scope:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "empty action scope")
-
         if request.risk in self.HIGH_RISK and not human_approved:
             return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "high-impact action requires human approval")
-
         if not request.authority:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "no authority basis supplied")
-
         return DecisionRecord(request.trace_id, Decision.AUTHORIZED, "policy checks passed")
 
     def verify(
@@ -132,25 +104,30 @@ class Sentinel:
         *,
         request: ActionRequest | None = None,
     ) -> DecisionRecord:
-        """Settle an authorized action. VERIFIED requires a passing CI attestation.
-
-        ``test_result`` (or ``request.test_result``) must hold a run ID with conclusion
-        "success". A missing attestation or any other conclusion, including a run that
-        never started (``startup_failure``), is FAILED with the reason recorded.
-        """
+        """Settle an authorized action; fail closed without independent CI proof."""
         if record.decision != Decision.AUTHORIZED:
             return record
         if not success:
             return DecisionRecord(record.trace_id, Decision.FAILED, "execution failed verification")
+
         attestation = test_result or (request.test_result if request is not None else None)
         if attestation is None or not attestation.run_id:
-            reason = "no test-result attestation (run_id + conclusion) supplied"
-        elif not attestation.passed:
-            reason = f"test run {attestation.run_id} concluded {attestation.conclusion!r}, not 'success'"
+            reason = "no test-result run reference supplied"
+        elif self.run_evidence_verifier is None:
+            reason = "no independent CI evidence verifier configured"
         else:
-            return DecisionRecord(
-                record.trace_id, Decision.VERIFIED, f"execution verified by test run {attestation.run_id}"
-            )
+            try:
+                trusted = self.run_evidence_verifier(attestation, request)
+            except Exception:
+                logger.exception("CI evidence verifier raised for trace=%s", record.trace_id)
+                trusted = False
+            if trusted:
+                return DecisionRecord(
+                    record.trace_id, Decision.VERIFIED,
+                    f"execution independently verified by CI run {attestation.run_id}",
+                )
+            reason = f"independent CI evidence verification rejected run {attestation.run_id}"
+
         failed = DecisionRecord(record.trace_id, Decision.FAILED, reason)
         logger.warning("sentinel failed trace=%s: %s", record.trace_id, reason)
         if self.on_reject is not None and request is not None:
@@ -161,11 +138,7 @@ class Sentinel:
 if __name__ == "__main__":
     sentinel = Sentinel()
     request = ActionRequest(
-        actor="demo-agent",
-        intent="perform a bounded test action",
-        scope=["demo"],
-        authority="test-policy",
-        aud="sentinel",
+        actor="demo-agent", intent="perform a bounded test action",
+        scope=["demo"], authority="test-policy", aud="sentinel",
     )
-    decision = sentinel.authorize(request)
-    print(decision)
+    print(sentinel.authorize(request))
