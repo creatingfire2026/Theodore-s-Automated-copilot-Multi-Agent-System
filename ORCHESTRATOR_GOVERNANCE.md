@@ -30,6 +30,20 @@ If authorization, evidence, or verification is missing, the flow terminates in `
 
 ## 3. Authority hierarchy
 
+## 3.1 Identifier namespaces — mandatory separation
+
+The A0–A7 labels in this document are local governance-tier labels, not AIP-001
+council-node identities. For internal references, qualify them as
+SENTINEL_GOV:A0 through SENTINEL_GOV:A7. AIP-001 referral sender/recipient
+fields use only the protocol's A1–A7 council namespace. Never compare, route,
+or authorize using an unqualified identifier across these namespaces.
+
+The AIP-001 council identities are ChatGPT, Gemini, Claude, Cloudflare Lee,
+Codex, Kimi, and Grok respectively. Council membership grants no operational
+authority. A7/Grok's dissent is protected and cannot be outvoted; only a
+separately authenticated human override may clear a specific dissent.
+
+
 | Level | Role | Responsibilities | Limits |
 |---|---|---|---|
 | A0 | Human owner / designated operator | Defines goals, grants/revokes permissions, approves consequential actions, resolves escalations | Must still respect applicable law and platform safety controls |
