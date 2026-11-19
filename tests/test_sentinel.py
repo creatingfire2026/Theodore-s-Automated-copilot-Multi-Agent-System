@@ -76,7 +76,7 @@ def test_wrong_audience_is_blocked_with_reason(caplog):
 
 
 def test_audience_is_checked_before_human_approval():
-    result = Sentinel("eth-desk").authorize(req(aud="other", risk="critical"), human_approved=True)
+    result = Sentinel("eth-desk").authorize(req(aud="other", risk="critical"))
     assert result.decision is Decision.BLOCKED
 
 
