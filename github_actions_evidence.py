@@ -27,6 +27,7 @@ class GitHubActionsEvidenceVerifier:
         repository: str,
         workflow_path: str,
         workflow_id: int,
+        expected_commit_sha: str,
         token: str | None = None,
         required_job: str = "test",
         required_step: str = "Run regression suite",
@@ -36,6 +37,7 @@ class GitHubActionsEvidenceVerifier:
         self.repository = repository
         self.workflow_path = workflow_path
         self.workflow_id = workflow_id
+        self.expected_commit_sha = expected_commit_sha
         self.token = token if token is not None else os.getenv("GITHUB_TOKEN", "")
         self.required_job = required_job
         self.required_step = required_step
@@ -52,7 +54,7 @@ class GitHubActionsEvidenceVerifier:
         if (
             not self.token
             or request is None
-            or not request.expected_commit_sha
+            or not self.expected_commit_sha
             or not result.run_id
             or not result.run_id.isdecimal()
         ):
@@ -69,7 +71,7 @@ class GitHubActionsEvidenceVerifier:
             run_path = str(run.get("path", "")).split("@", 1)[0]
             if (
                 run.get("repository", {}).get("full_name") != self.repository
-                or run.get("head_sha") != request.expected_commit_sha
+                or run.get("head_sha") != self.expected_commit_sha
                 or run_path != self.workflow_path
                 or run.get("workflow_id") != self.workflow_id
                 or run.get("status") != "completed"
@@ -99,5 +101,5 @@ class GitHubActionsEvidenceVerifier:
                 ):
                     return True
             return False
-        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, OSError):
+        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, AttributeError, OSError):
             return False
