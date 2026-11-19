@@ -1,5 +1,11 @@
 from swarm_router import AgentSwarmRouter, Sector, SectorMetrics, ThreatLevel
 
+def authorized_router():
+    return AgentSwarmRouter(
+        authorization_verifier=lambda task_id, approval: approval == f"human-grant:{task_id}"
+    )
+
+
 
 def idle_metrics():
     return {sector: SectorMetrics() for sector in Sector}
@@ -12,7 +18,7 @@ def with_metrics(overrides):
 
 
 def test_high_impact_tasks_wait_for_authorization():
-    router = AgentSwarmRouter()
+    router = authorized_router()
     router.process_cycle(
         with_metrics({
             Sector.EAST: SectorMetrics(active_tasks=["east_lockdown", "recon_sweep"]),
@@ -28,7 +34,7 @@ def test_high_impact_tasks_wait_for_authorization():
     # Ordinary SOUTH/WEST tasks at L0 still dispatch.
     assert router.execution_bindings.get("noise_filter") is Sector.SOUTH
 
-    router.authorize("east_lockdown")
+    assert router.authorize("east_lockdown", "human-grant:east_lockdown")
     assert "east_lockdown" not in router.pending_authorization
     assert router.execution_bindings["east_lockdown"] is Sector.EAST
 
@@ -41,7 +47,7 @@ def test_high_impact_tasks_wait_for_authorization():
 
 
 def test_barrier_and_elite_also_require_authorization():
-    router = AgentSwarmRouter()
+    router = authorized_router()
     router.process_cycle(
         with_metrics({
             Sector.WEST: SectorMetrics(active_tasks=["raise_barrier", "elite_dispatch"]),
@@ -50,8 +56,8 @@ def test_barrier_and_elite_also_require_authorization():
     assert "raise_barrier" not in router.execution_bindings
     assert "elite_dispatch" not in router.execution_bindings
     assert set(router.pending_authorization) == {"raise_barrier", "elite_dispatch"}
-    router.authorize("raise_barrier")
-    router.authorize("elite_dispatch")
+    assert router.authorize("raise_barrier", "human-grant:raise_barrier")
+    assert router.authorize("elite_dispatch", "human-grant:elite_dispatch")
     assert set(router.execution_bindings) >= {"raise_barrier", "elite_dispatch"}
 
 
@@ -156,3 +162,35 @@ def test_inward_to_core_override():
     assert "recon_sweep" not in router.execution_bindings
     assert "evac_route" not in router.execution_bindings
     assert "convoy" not in router.execution_bindings
+
+
+
+def test_high_impact_authorization_fails_closed_without_verifier():
+    router = AgentSwarmRouter()
+    assert router.authorize("east_lockdown") is False
+    router.process_cycle(with_metrics({Sector.EAST: SectorMetrics(active_tasks=["east_lockdown"])}))
+    assert "east_lockdown" not in router.execution_bindings
+    assert "east_lockdown" in router.pending_authorization
+
+
+def test_authorization_is_rechecked_each_cycle_and_revocation_blocks_dispatch():
+    valid = {"enabled": True}
+    router = AgentSwarmRouter(
+        authorization_verifier=lambda task_id, approval: (
+            approval.get("task_id") == task_id and valid["enabled"]
+        )
+    )
+    router.process_cycle(with_metrics({Sector.EAST: SectorMetrics(active_tasks=["east_lockdown"])}))
+    assert router.authorize("east_lockdown", {"task_id": "east_lockdown"}) is True
+    router.process_cycle(with_metrics({Sector.EAST: SectorMetrics(active_tasks=["east_lockdown"])}))
+    assert router.execution_bindings.get("east_lockdown") is Sector.EAST
+
+    valid["enabled"] = False  # trusted verifier now reports revoked/expired
+    router.process_cycle(with_metrics({Sector.EAST: SectorMetrics(active_tasks=["east_lockdown"])}))
+    assert "east_lockdown" not in router.execution_bindings
+    assert "east_lockdown" in router.pending_authorization
+
+
+def test_wrong_task_approval_is_rejected():
+    router = authorized_router()
+    assert router.authorize("east_lockdown", "human-grant:west_lockdown") is False
