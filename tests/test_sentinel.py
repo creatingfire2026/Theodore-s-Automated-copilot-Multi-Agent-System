@@ -196,14 +196,13 @@ def test_github_actions_verifier_checks_authoritative_run_and_required_test_step
     }
 
     def transport(url, headers, timeout):
-        return payloads[url.split("/repos/")[1].split("/actions")[1].join(["/actions", ""])] if False else (
-            payloads["/actions/runs/77/jobs"] if url.endswith("/jobs") else payloads["/actions/runs/77"]
-        )
+        return payloads["/actions/runs/77/jobs"] if url.endswith("/jobs") else payloads["/actions/runs/77"]
 
     verifier = GitHubActionsEvidenceVerifier(
         repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
         workflow_path=".github/workflows/sentinel-ci.yml",
         workflow_id=390163888,
+        expected_commit_sha="abc123",
         token="fixture-token",
         transport=transport,
     )
@@ -269,6 +268,7 @@ def test_github_actions_verifier_fails_closed_without_token_or_commit():
         repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
         workflow_path=".github/workflows/sentinel-ci.yml",
         workflow_id=390163888,
+        expected_commit_sha="abc123",
         token="",
         transport=lambda url, headers, timeout: {},
     )
