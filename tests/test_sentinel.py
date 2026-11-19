@@ -1,6 +1,6 @@
 import logging
 
-from sentinel import ActionRequest, Decision, Sentinel, TestResult
+from sentinel import ActionRequest, Decision, HumanApproval, Sentinel, TestResult
 
 
 def req(**kw):
@@ -16,8 +16,38 @@ def test_high_risk_requires_human():
     assert Sentinel().authorize(req(risk="high")).decision is Decision.HUMAN_REVIEW
 
 
-def test_high_risk_can_be_approved():
-    assert Sentinel().authorize(req(risk="critical"), human_approved=True).decision is Decision.AUTHORIZED
+def test_high_risk_requires_verifiable_human_approval():
+    request = req(risk="critical")
+    approval = HumanApproval("approval-1", "human-1", request.trace_id, request.intent, tuple(request.scope), "2099-01-01T00:00:00Z", "test-signature")
+    sentinel = Sentinel(human_approval_verifier=lambda grant, action: grant.approval_id == "approval-1")
+    assert sentinel.authorize(request, human_approval=approval).decision is Decision.AUTHORIZED
+
+
+def test_high_risk_boolean_or_missing_verifier_cannot_authorize():
+    request = req(risk="critical")
+    approval = HumanApproval("approval-1", "human-1", request.trace_id, request.intent, tuple(request.scope), "2099-01-01T00:00:00Z", "test-signature")
+    assert Sentinel().authorize(request, human_approval=approval).decision is Decision.HUMAN_REVIEW
+
+
+def test_protected_grok_dissent_blocks_without_exact_human_override():
+    request = req(protected_dissent_node="A7", protected_dissent_id="dissent-77")
+    assert Sentinel().authorize(request).decision is Decision.HUMAN_REVIEW
+
+
+def test_protected_grok_dissent_requires_exact_override_and_verified_signature():
+    request = req(protected_dissent_node="A7", protected_dissent_id="dissent-77")
+    wrong = HumanApproval("approval-2", "human-1", request.trace_id, request.intent, tuple(request.scope), "2099-01-01T00:00:00Z", "sig", "dissent-other", "reason")
+    assert Sentinel(human_approval_verifier=lambda grant, action: True).authorize(request, human_approval=wrong).decision is Decision.HUMAN_REVIEW
+    correct = HumanApproval("approval-3", "human-1", request.trace_id, request.intent, tuple(request.scope), "2099-01-01T00:00:00Z", "sig", "dissent-77", "documented risk acceptance")
+    sentinel = Sentinel(human_approval_verifier=lambda grant, action: grant.dissent_override_id == "dissent-77")
+    assert sentinel.authorize(request, human_approval=correct).decision is Decision.AUTHORIZED
+
+
+def test_non_a7_node_cannot_claim_protected_grok_dissent():
+    request = req(protected_dissent_node="A3", protected_dissent_id="dissent-77")
+    approval = HumanApproval("approval-4", "human-1", request.trace_id, request.intent, tuple(request.scope), "2099-01-01T00:00:00Z", "sig", "dissent-77", "reason")
+    sentinel = Sentinel(human_approval_verifier=lambda grant, action: True)
+    assert sentinel.authorize(request, human_approval=approval).decision is Decision.BLOCKED
 
 
 def test_missing_authority_is_blocked():
