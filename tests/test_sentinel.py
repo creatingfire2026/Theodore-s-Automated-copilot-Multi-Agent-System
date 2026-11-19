@@ -1,6 +1,7 @@
 import logging
 
 from sentinel import ActionRequest, Decision, HumanApproval, Sentinel, TestResult
+from github_actions_evidence import GitHubActionsEvidenceVerifier
 
 
 def req(**kw):
@@ -161,3 +162,116 @@ def test_request_attestation_uses_verifier_and_failures_are_tombstoned():
     result = sentinel.verify(sentinel.authorize(request), True, request=request)
     assert result.decision is Decision.FAILED
     assert graves == ["independent CI evidence verification rejected run 123"]
+
+
+def _github_run_fixture(conclusion="success", head_sha="abc123", path=".github/workflows/sentinel-ci.yml@refs/heads/main"):
+    return {
+        "repository": {"full_name": "creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System"},
+        "head_sha": head_sha,
+        "path": path,
+        "workflow_id": 390163888,
+        "status": "completed",
+        "conclusion": conclusion,
+    }
+
+
+def _github_jobs_fixture(conclusion="success", test_step="success"):
+    return {
+        "jobs": [{
+            "name": "test",
+            "status": "completed",
+            "conclusion": conclusion,
+            "steps": [
+                {"name": "Compile Sentinel and tests", "status": "completed", "conclusion": "success"},
+                {"name": "Run regression suite", "status": "completed", "conclusion": test_step},
+            ],
+        }]
+    }
+
+
+def test_github_actions_verifier_checks_authoritative_run_and_required_test_step():
+    payloads = {
+        "/actions/runs/77": _github_run_fixture(),
+        "/actions/runs/77/jobs": _github_jobs_fixture(),
+    }
+
+    def transport(url, headers, timeout):
+        return payloads[url.split("/repos/")[1].split("/actions")[1].join(["/actions", ""])] if False else (
+            payloads["/actions/runs/77/jobs"] if url.endswith("/jobs") else payloads["/actions/runs/77"]
+        )
+
+    verifier = GitHubActionsEvidenceVerifier(
+        repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+        workflow_path=".github/workflows/sentinel-ci.yml",
+        workflow_id=390163888,
+        token="fixture-token",
+        transport=transport,
+    )
+    request = req(expected_commit_sha="abc123")
+    assert verifier(TestResult("77", "failure"), request) is True
+
+
+def test_github_actions_verifier_rejects_startup_failure_and_zero_jobs():
+    payloads = {
+        "run": _github_run_fixture(conclusion="startup_failure"),
+        "jobs": {"jobs": []},
+    }
+
+    def transport(url, headers, timeout):
+        return payloads["jobs"] if url.endswith("/jobs") else payloads["run"]
+
+    verifier = GitHubActionsEvidenceVerifier(
+        repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+        workflow_path=".github/workflows/sentinel-ci.yml",
+        workflow_id=390163888,
+        token="fixture-token",
+        transport=transport,
+    )
+    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+
+
+def test_github_actions_verifier_rejects_wrong_commit_or_workflow():
+    run = _github_run_fixture(head_sha="different")
+    jobs = _github_jobs_fixture()
+
+    def transport(url, headers, timeout):
+        return jobs if url.endswith("/jobs") else run
+
+    verifier = GitHubActionsEvidenceVerifier(
+        repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+        workflow_path=".github/workflows/sentinel-ci.yml",
+        workflow_id=390163888,
+        token="fixture-token",
+        transport=transport,
+    )
+    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+
+
+def test_github_actions_verifier_rejects_skipped_or_failed_test_step():
+    run = _github_run_fixture()
+    jobs = _github_jobs_fixture(test_step="skipped")
+
+    def transport(url, headers, timeout):
+        return jobs if url.endswith("/jobs") else run
+
+    verifier = GitHubActionsEvidenceVerifier(
+        repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+        workflow_path=".github/workflows/sentinel-ci.yml",
+        workflow_id=390163888,
+        token="fixture-token",
+        transport=transport,
+    )
+    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+
+
+def test_github_actions_verifier_fails_closed_without_token_or_commit():
+    verifier = GitHubActionsEvidenceVerifier(
+        repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
+        workflow_path=".github/workflows/sentinel-ci.yml",
+        workflow_id=390163888,
+        token="",
+        transport=lambda url, headers, timeout: {},
+    )
+    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+    verifier.token = "fixture-token"
+    assert not verifier(TestResult("77", "success"), req())
