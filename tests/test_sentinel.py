@@ -206,7 +206,7 @@ def test_github_actions_verifier_checks_authoritative_run_and_required_test_step
         token="fixture-token",
         transport=transport,
     )
-    request = req(expected_commit_sha="abc123")
+    request = req()
     assert verifier(TestResult("77", "failure"), request) is True
 
 
@@ -223,10 +223,11 @@ def test_github_actions_verifier_rejects_startup_failure_and_zero_jobs():
         repository="creatingfire2026/Theodore-s-Automated-copilot-Multi-Agent-System",
         workflow_path=".github/workflows/sentinel-ci.yml",
         workflow_id=390163888,
+        expected_commit_sha="abc123",
         token="fixture-token",
         transport=transport,
     )
-    assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
+    assert not verifier(TestResult("77", "success"), req())
 
 
 def test_github_actions_verifier_rejects_wrong_commit_or_workflow():
@@ -274,4 +275,5 @@ def test_github_actions_verifier_fails_closed_without_token_or_commit():
     )
     assert not verifier(TestResult("77", "success"), req(expected_commit_sha="abc123"))
     verifier.token = "fixture-token"
+    verifier.expected_commit_sha = ""
     assert not verifier(TestResult("77", "success"), req())
