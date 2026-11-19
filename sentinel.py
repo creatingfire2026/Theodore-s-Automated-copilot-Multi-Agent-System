@@ -39,6 +39,22 @@ class ActionRequest:
     trace_id: str = field(default_factory=lambda: str(uuid4()))
     aud: str = ""
     test_result: TestResult | None = None
+    protected_dissent_node: str | None = None
+    protected_dissent_id: str | None = None
+
+
+@dataclass(frozen=True)
+class HumanApproval:
+    """Untrusted approval envelope; signature authenticity is delegated to verifier."""
+    approval_id: str
+    human_id: str
+    trace_id: str
+    action: str
+    scope: tuple[str, ...]
+    expires_at: str
+    signature: str
+    dissent_override_id: str | None = None
+    justification: str = ""
 
 
 @dataclass
@@ -49,6 +65,7 @@ class DecisionRecord:
 
 
 RunEvidenceVerifier = Callable[[TestResult, ActionRequest | None], bool]
+HumanApprovalVerifier = Callable[[HumanApproval, ActionRequest], bool]
 
 
 class Sentinel:
@@ -61,12 +78,14 @@ class Sentinel:
         *,
         on_reject: Callable[[ActionRequest, DecisionRecord], None] | None = None,
         run_evidence_verifier: RunEvidenceVerifier | None = None,
+        human_approval_verifier: HumanApprovalVerifier | None = None,
     ) -> None:
         if not agent_id:
             raise ValueError("Sentinel needs a non-empty agent_id")
         self.agent_id = agent_id
         self.on_reject = on_reject
         self.run_evidence_verifier = run_evidence_verifier
+        self.human_approval_verifier = human_approval_verifier
 
     def _reject(self, request: ActionRequest, decision: Decision, reason: str) -> DecisionRecord:
         record = DecisionRecord(request.trace_id, decision, reason)
@@ -78,7 +97,7 @@ class Sentinel:
             self.on_reject(request, record)
         return record
 
-    def authorize(self, request: ActionRequest, *, human_approved: bool = False) -> DecisionRecord:
+    def authorize(self, request: ActionRequest, *, human_approval: HumanApproval | None = None) -> DecisionRecord:
         if not request.aud:
             return self._reject(request, Decision.BLOCKED, "missing audience (aud)")
         if request.aud != self.agent_id:
@@ -90,8 +109,36 @@ class Sentinel:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "missing attribution or intent")
         if not request.scope:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "empty action scope")
-        if request.risk in self.HIGH_RISK and not human_approved:
-            return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "high-impact action requires human approval")
+        requires_human = request.risk in self.HIGH_RISK
+        if requires_human or request.protected_dissent_id:
+            approval = human_approval
+            if approval is None:
+                reason = "protected A7 dissent requires an authenticated human override" if request.protected_dissent_id else "high-impact action requires authenticated human approval"
+                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, reason)
+            if not (
+                approval.approval_id
+                and approval.human_id
+                and approval.signature
+                and approval.expires_at
+                and approval.trace_id == request.trace_id
+                and approval.action == request.intent
+                and approval.scope == tuple(request.scope)
+            ):
+                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human approval is incomplete or not bound to this action")
+            if request.protected_dissent_id:
+                if request.protected_dissent_node != "A7":
+                    return DecisionRecord(request.trace_id, Decision.BLOCKED, "protected dissent source must be council node A7")
+                if approval.dissent_override_id != request.protected_dissent_id or not approval.justification.strip():
+                    return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human override must reference the exact protected dissent and include justification")
+            if self.human_approval_verifier is None:
+                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "no independent human-approval verifier configured")
+            try:
+                approved = self.human_approval_verifier(approval, request)
+            except Exception:
+                logger.exception("human approval verifier raised for trace=%s", request.trace_id)
+                approved = False
+            if not approved:
+                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human approval signature, identity, scope, or expiry verification failed")
         if not request.authority:
             return DecisionRecord(request.trace_id, Decision.BLOCKED, "no authority basis supplied")
         return DecisionRecord(request.trace_id, Decision.AUTHORIZED, "policy checks passed")
