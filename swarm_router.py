@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 
 class Sector(Enum):
@@ -61,7 +61,7 @@ def is_high_impact(task_id: str) -> bool:
 
 
 class AgentSwarmRouter:
-    def __init__(self, hysteresis_cycles: int = 2):
+    def __init__(self, hysteresis_cycles: int = 2, *, authorization_verifier: Optional[Callable[[str, Any], bool]] = None):
         if hysteresis_cycles < 1:
             raise ValueError("hysteresis_cycles must be >= 1")
         self.hysteresis_cycles = hysteresis_cycles
@@ -74,7 +74,8 @@ class AgentSwarmRouter:
         self.execution_bindings: Dict[str, Sector] = {}
         self.safety_locks: Set[Sector] = set()
         self.pending_authorization: Dict[str, Sector] = {}
-        self._authorized: Set[str] = set()
+        self._authorizations: Dict[str, Any] = {}
+        self.authorization_verifier = authorization_verifier
         self._calm_cycles = 0
 
     def process_cycle(self, telemetry: Dict[Sector, SectorMetrics], cycle_phase: Optional[str] = None):
@@ -92,13 +93,20 @@ class AgentSwarmRouter:
         if cycle_phase in ["morning", "midday", "evening", "night"]:
             self._run_optimization_pipeline()
 
-    def authorize(self, task_id: str) -> bool:
-        """Release a high-impact task so it may be dispatched.
+    def authorize(self, task_id: str, approval: Any = None) -> bool:
+        """Accept a task-bound human approval only through a trusted verifier.
 
-        If the task is already queued or present in current telemetry, it is
-        bound immediately. Otherwise it is marked authorized for a later cycle.
+        The verifier must authenticate the human, signature, action scope,
+        expiry and revocation state. No verifier or approval means deny.
         """
-        self._authorized.add(task_id)
+        if not task_id or approval is None or self.authorization_verifier is None:
+            return False
+        try:
+            if not self.authorization_verifier(task_id, approval):
+                return False
+        except Exception:
+            return False
+        self._authorizations[task_id] = approval
         sector = self.pending_authorization.pop(task_id, None)
         if sector is None:
             for sec, metrics in self.sector_state.items():
@@ -107,8 +115,16 @@ class AgentSwarmRouter:
                     break
         if sector is not None:
             self.execution_bindings[task_id] = sector
-            return True
         return True
+
+    def _has_valid_authorization(self, task_id: str) -> bool:
+        approval = self._authorizations.get(task_id)
+        if approval is None or self.authorization_verifier is None:
+            return False
+        try:
+            return bool(self.authorization_verifier(task_id, approval))
+        except Exception:
+            return False
 
     def release_execution_task(self, task_id: str):
         self.execution_bindings.pop(task_id, None)
@@ -122,7 +138,7 @@ class AgentSwarmRouter:
             if sector == Sector.EAST:
                 self.safety_locks.add(Sector.EAST)
             for task in high_impact_actions:
-                if task not in self._authorized:
+                if not self._has_valid_authorization(task):
                     self.pending_authorization[task] = sector
                 else:
                     self._dispatch_execution(sector, task)
@@ -206,7 +222,7 @@ class AgentSwarmRouter:
                 self._dispatch_execution(sector, task)
 
     def _dispatch_execution(self, sector: Sector, task_id: str):
-        if is_high_impact(task_id) and task_id not in self._authorized:
+        if is_high_impact(task_id) and not self._has_valid_authorization(task_id):
             self.pending_authorization[task_id] = sector
             return
         self.execution_bindings[task_id] = sector
