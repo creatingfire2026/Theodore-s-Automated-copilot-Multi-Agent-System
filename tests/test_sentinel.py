@@ -9,33 +9,24 @@ def req(**kw):
 
 
 def test_low_risk_authorizes():
-    result = Sentinel().authorize(req())
-    assert result.decision is Decision.AUTHORIZED
+    assert Sentinel().authorize(req()).decision is Decision.AUTHORIZED
 
 
 def test_high_risk_requires_human():
-    result = Sentinel().authorize(req(risk="high"))
-    assert result.decision is Decision.HUMAN_REVIEW
+    assert Sentinel().authorize(req(risk="high")).decision is Decision.HUMAN_REVIEW
 
 
 def test_high_risk_can_be_approved():
-    result = Sentinel().authorize(req(risk="critical"), human_approved=True)
-    assert result.decision is Decision.AUTHORIZED
+    assert Sentinel().authorize(req(risk="critical"), human_approved=True).decision is Decision.AUTHORIZED
 
 
 def test_missing_authority_is_blocked():
-    result = Sentinel().authorize(req(authority=""))
-    assert result.decision is Decision.BLOCKED
+    assert Sentinel().authorize(req(authority="")).decision is Decision.BLOCKED
 
 
 def test_verification_failure_stays_failed():
     sentinel = Sentinel()
-    authorized = sentinel.authorize(req())
-    result = sentinel.verify(authorized, success=False)
-    assert result.decision is Decision.FAILED
-
-
-# --- AIP-001 amendment: audience ---------------------------------------------------
+    assert sentinel.verify(sentinel.authorize(req()), success=False).decision is Decision.FAILED
 
 
 def test_missing_audience_is_blocked_and_logged(caplog):
@@ -79,40 +70,64 @@ def test_empty_agent_id_is_refused():
     raise AssertionError("Sentinel('') should raise")
 
 
-# --- AIP-001 amendment: test-result attestation ------------------------------------
-
-
-def test_only_success_counts_as_verified():
+def test_caller_supplied_success_cannot_verify_without_trusted_verifier():
     sentinel = Sentinel()
-    authorized = sentinel.authorize(req())
-    result = sentinel.verify(authorized, True, TestResult("42774884628", "success"))
-    assert result.decision is Decision.VERIFIED
-    assert "42774884628" in result.reason
-
-
-def test_startup_failure_is_not_verified():
-    # PR #17's CI runs ended in startup_failure before any job ran.
-    sentinel = Sentinel()
-    authorized = sentinel.authorize(req())
-    result = sentinel.verify(authorized, True, TestResult("42774884628", "startup_failure"))
+    result = sentinel.verify(
+        sentinel.authorize(req()), True, TestResult("fake-run-id", "success")
+    )
     assert result.decision is Decision.FAILED
-    assert "startup_failure" in result.reason
+    assert "no independent CI evidence verifier" in result.reason
 
 
-def test_missing_attestation_is_not_verified():
+def test_trusted_verifier_rejects_startup_failure_fixture():
+    sentinel = Sentinel(run_evidence_verifier=lambda run, request: run.conclusion == "success")
+    result = sentinel.verify(
+        sentinel.authorize(req()), True, TestResult("42774884628", "startup_failure")
+    )
+    assert result.decision is Decision.FAILED
+    assert "rejected run 42774884628" in result.reason
+
+
+def test_trusted_verifier_positive_control_uses_test_double():
+    # This validates the dependency seam only; it is not a live GitHub attestation.
+    sentinel = Sentinel(
+        run_evidence_verifier=lambda run, request: (
+            run.run_id == "fixture-success-run" and run.conclusion == "success"
+        )
+    )
+    result = sentinel.verify(
+        sentinel.authorize(req()), True, TestResult("fixture-success-run", "success")
+    )
+    assert result.decision is Decision.VERIFIED
+    assert "fixture-success-run" in result.reason
+
+
+def test_missing_attestation_or_verifier_fails_closed():
     sentinel = Sentinel()
     authorized = sentinel.authorize(req())
     assert sentinel.verify(authorized, True).decision is Decision.FAILED
     assert sentinel.verify(authorized, True, TestResult("", "success")).decision is Decision.FAILED
 
 
-def test_attestation_can_ride_on_the_request_and_failures_are_tombstoned():
-    graves = []
-    sentinel = Sentinel(on_reject=lambda r, d: graves.append(d.reason))
-    request = req(test_result=TestResult("123", "failure"))
-    authorized = sentinel.authorize(request)
-    result = sentinel.verify(authorized, True, request=request)
+def test_verifier_exception_fails_closed():
+    def broken_verifier(run, request):
+        raise RuntimeError("provider unavailable")
+
+    sentinel = Sentinel(run_evidence_verifier=broken_verifier)
+    result = sentinel.verify(
+        sentinel.authorize(req()), True, TestResult("fixture-run", "success")
+    )
     assert result.decision is Decision.FAILED
-    assert graves == ["test run 123 concluded 'failure', not 'success'"]
-    ok = req(test_result=TestResult("124", "success"))
-    assert sentinel.verify(sentinel.authorize(ok), True, request=ok).decision is Decision.VERIFIED
+    assert "rejected run fixture-run" in result.reason
+
+
+def test_request_attestation_uses_verifier_and_failures_are_tombstoned():
+    graves = []
+    sentinel = Sentinel(
+        on_reject=lambda r, d: graves.append(d.reason),
+        run_evidence_verifier=lambda run, request: run.conclusion == "success",
+    )
+    request = req(test_result=TestResult("123", "failure"))
+    result = sentinel.verify(sentinel.authorize(request), True, request=request)
+    assert result.decision is Decision.FAILED
+    assert graves == ["independent CI evidence verification rejected run 123"]
