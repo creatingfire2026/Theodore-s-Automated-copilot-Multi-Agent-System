@@ -1,0 +1,9 @@
+{
+  "vector_id": "VECTOR-004",
+  "description": "Fallback route exists but has not received explicit Sentinel admission.",
+  "expected_primary_verdict": "FALLBACK_NOT_ADMITTED",
+  "expected_terminal_state": "UNRESOLVED",
+  "expected_gates": {"structure": "PASS", "cryptography": "PASS", "policy": "FAIL", "health": "NOT_EVALUATED"},
+  "expected_secondary_classifications": [],
+  "payload": {"capability_id": "github_issue_writer", "version": "1.2.0", "definition_hash": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832", "health_vector": {"connected": true, "authenticated": true, "authorized": true, "executable": true, "verified_healthy": false}, "fallback_routes": [{"fallback_capability_id": "backup_runner", "sentinel_admission_status": "UNEVALUATED", "resolution_state": "UNRESOLVED"}], "signature_envelope": {"anchor_key_id": "sentinel-root-test-key-01", "canonicalization": "RFC8785-JCS", "payload_hash": "sha256:48b864b49bb65ead60e9bda15a0b8b0e35bc13c7aff98299d28da10b757bf91f", "signature_algorithm": "Ed25519", "timestamp": "2026-08-09T00:00:00Z", "signature": "444a43f3c02ceee3a5d69a4ae0e684249e088a8040b5deaf0555aabc6a1fcd575197ffe49e2dda90e4d6ca0255aa09a94e4613abc787b1491c64c013be251c03"}}
+}

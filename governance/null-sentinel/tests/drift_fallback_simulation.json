@@ -1,0 +1,43 @@
+{
+  "simulation_id": "null-drift-fallback-001",
+  "objective": "Verify that capability health classification distinguishes version drift and permission loss from transport/auth failure, and that fallback remains a candidate path requiring Sentinel admission.",
+  "primary_capability": {
+    "capability_id": "github.repository.write",
+    "provider": "GitHub MCP",
+    "connection": "HEALTHY",
+    "authentication": "HEALTHY",
+    "permission": "DENIED",
+    "required_scope": ["contents:write"],
+    "observed_scope": ["contents:read"],
+    "version_state": "VERSION_DRIFT",
+    "expected_classification": "PERMISSION_CHANGED"
+  },
+  "fallback": {
+    "capability_id": "github.direct_connector.write",
+    "provider": "Direct GitHub connector",
+    "connection": "HEALTHY",
+    "authentication": "HEALTHY",
+    "permission": "ALLOWED",
+    "required_scope": ["contents:write"],
+    "observed_scope": ["contents:write"],
+    "version_state": "HEALTHY",
+    "sentinel_admission": "REQUIRED",
+    "expected_classification": "CANDIDATE_FALLBACK"
+  },
+  "assertions": [
+    "Primary capability MUST NOT classify as UNREACHABLE when connection is HEALTHY.",
+    "Primary capability MUST NOT classify as AUTH_EXPIRED when authentication is HEALTHY.",
+    "Permission loss MUST classify as PERMISSION_CHANGED when required scope is absent.",
+    "Version drift MUST be recorded independently from permission state.",
+    "Fallback availability MUST NOT imply automatic authorization.",
+    "Fallback MUST pass Sentinel admission for the requested action before execution.",
+    "Recovery to HEALTHY MUST require fresh verification of the failed dimension."
+  ],
+  "expected_outcome": {
+    "primary_execution": "BLOCK",
+    "primary_health": "PERMISSION_CHANGED",
+    "secondary_condition": "VERSION_DRIFT",
+    "fallback_action": "ADMISSION_REQUIRED",
+    "final_state_before_admission": "UNRESOLVED"
+  }
+}

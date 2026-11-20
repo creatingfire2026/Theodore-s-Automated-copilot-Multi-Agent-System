@@ -1,0 +1,94 @@
+{
+  "schema_version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "request_id": "req.permission-changed.001",
+  "created_at": "2026-08-09T01:00:00Z",
+  "requestor": {
+    "id": "agent.null",
+    "type": "AI_AGENT",
+    "display_name": "NULL Sentinel"
+  },
+  "target": {
+    "id": "repo.governance",
+    "type": "REPOSITORY",
+    "display_name": "Governance repository"
+  },
+  "intent": "Update the operational ledger after admission review.",
+  "success_condition": "The requested write path is classified with permission evidence.",
+  "current_state": "VALIDATED",
+  "requested_transition": "VALIDATED->APPROVAL_REQUIRED",
+  "state": "APPROVAL_REQUIRED",
+  "authority": {
+    "class": "ASK_FIRST",
+    "basis": "Write scope changed from the admitted baseline.",
+    "approval_id": "approval.pr3.002"
+  },
+  "risk": {
+    "level": "MEDIUM",
+    "reversible": true,
+    "blast_radius": "Governance artifacts in the working branch.",
+    "rollback_plan": "Re-run with restored scope or authorized fallback."
+  },
+  "evidence": [
+    {
+      "source": "capability-audit",
+      "claim": "The provider now exposes read-only scope for the requested write path.",
+      "status": "MEASURED",
+      "timestamp": "2026-08-09T01:05:00Z",
+      "hash": null
+    }
+  ],
+  "epistemic_status": "MEASURED",
+  "decision": {
+    "result": "REQUIRE_APPROVAL",
+    "reason": "Scope drift prevents the admitted write action."
+  },
+  "execution": {
+    "attempted": false,
+    "operation_id": null,
+    "actual_action": "",
+    "result": ""
+  },
+  "verification": {
+    "method": "",
+    "passed": null,
+    "evidence": [],
+    "observed_effect": "",
+    "residual_risk": "Write capability is unavailable until permissions are restored."
+  },
+  "capability_health": {
+    "capability_id": "github.repository.write",
+    "provider": "GitHub MCP",
+    "health": "PERMISSION_CHANGED",
+    "connection": "HEALTHY",
+    "authentication": "HEALTHY",
+    "permission": "DENIED",
+    "required_scope": [
+      "contents:write"
+    ],
+    "observed_scope": [
+      "contents:read"
+    ],
+    "version_state": "HEALTHY",
+    "rate_limit_state": "HEALTHY",
+    "trust_state": "HEALTHY",
+    "fallbacks": [
+      "direct GitHub connector"
+    ],
+    "last_verified_at": null,
+    "verification_evidence": [
+      {
+        "source": "provider-scope-inspection",
+        "claim": "Observed scope no longer includes contents:write.",
+        "status": "MEASURED",
+        "timestamp": "2026-08-09T01:04:00Z",
+        "hash": null
+      }
+    ]
+  },
+  "previous_record_hash": null,
+  "record_hash": "bde0a3b72209e812985ab2b6f6b540676199c751145d33e87513d4e8c728f72e"
+}

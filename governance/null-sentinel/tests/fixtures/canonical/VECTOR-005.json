@@ -1,0 +1,9 @@
+{
+  "vector_id": "VECTOR-005",
+  "description": "Structurally valid record with a forged Ed25519 signature.",
+  "expected_primary_verdict": "SIGNATURE_VERIFICATION_FAILED",
+  "expected_terminal_state": "BLOCKED",
+  "expected_gates": {"structure": "PASS", "cryptography": "FAIL", "policy": "NOT_EVALUATED", "health": "NOT_EVALUATED"},
+  "expected_secondary_classifications": [],
+  "payload": {"capability_id": "github_issue_writer", "version": "1.2.0", "definition_hash": "sha256:a4f8d2b992147321e3f8902d1847529810427389472109847230918239012832", "health_vector": {"connected": true, "authenticated": true, "authorized": true, "executable": true, "verified_healthy": true}, "fallback_routes": [], "signature_envelope": {"anchor_key_id": "sentinel-root-test-key-01", "canonicalization": "RFC8785-JCS", "payload_hash": "sha256:f89c0c29f8e508e7239c2009c9320a81e7c28f4b90c828ec21cec3e384266036", "signature_algorithm": "Ed25519", "timestamp": "2026-08-09T00:00:00Z", "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}}
+}
