@@ -71,6 +71,7 @@ HumanApprovalVerifier = Callable[[HumanApproval, ActionRequest], bool]
 class Sentinel:
     """Policy gate. VERIFIED requires an independently configured CI verifier."""
     HIGH_RISK = {"high", "critical"}
+    KNOWN_RISK = {"low", "medium", "high", "critical"}
 
     def __init__(
         self,
@@ -106,15 +107,19 @@ class Sentinel:
                 f"wrong audience: envelope addressed to {request.aud!r}, receiver is {self.agent_id!r}",
             )
         if not request.actor or not request.intent or not request.trace_id:
-            return DecisionRecord(request.trace_id, Decision.BLOCKED, "missing attribution or intent")
+            return self._reject(request, Decision.BLOCKED, "missing attribution or intent")
         if not request.scope:
-            return DecisionRecord(request.trace_id, Decision.BLOCKED, "empty action scope")
-        requires_human = request.risk in self.HIGH_RISK
+            return self._reject(request, Decision.BLOCKED, "empty action scope")
+        risk = request.risk.strip().lower() if isinstance(request.risk, str) else ""
+        if risk not in self.KNOWN_RISK:
+            # Fail closed: an unknown or miscased label must never be treated as low risk.
+            return self._reject(request, Decision.BLOCKED, f"unknown risk label {request.risk!r}")
+        requires_human = risk in self.HIGH_RISK
         if requires_human or request.protected_dissent_id:
             approval = human_approval
             if approval is None:
                 reason = "protected A7 dissent requires an authenticated human override" if request.protected_dissent_id else "high-impact action requires authenticated human approval"
-                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, reason)
+                return self._reject(request, Decision.HUMAN_REVIEW, reason)
             if not (
                 approval.approval_id
                 and approval.human_id
@@ -124,23 +129,23 @@ class Sentinel:
                 and approval.action == request.intent
                 and approval.scope == tuple(request.scope)
             ):
-                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human approval is incomplete or not bound to this action")
+                return self._reject(request, Decision.HUMAN_REVIEW, "human approval is incomplete or not bound to this action")
             if request.protected_dissent_id:
                 if request.protected_dissent_node != "A7":
-                    return DecisionRecord(request.trace_id, Decision.BLOCKED, "protected dissent source must be council node A7")
+                    return self._reject(request, Decision.BLOCKED, "protected dissent source must be council node A7")
                 if approval.dissent_override_id != request.protected_dissent_id or not approval.justification.strip():
-                    return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human override must reference the exact protected dissent and include justification")
+                    return self._reject(request, Decision.HUMAN_REVIEW, "human override must reference the exact protected dissent and include justification")
             if self.human_approval_verifier is None:
-                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "no independent human-approval verifier configured")
+                return self._reject(request, Decision.HUMAN_REVIEW, "no independent human-approval verifier configured")
             try:
                 approved = self.human_approval_verifier(approval, request)
             except Exception:
                 logger.exception("human approval verifier raised for trace=%s", request.trace_id)
                 approved = False
             if not approved:
-                return DecisionRecord(request.trace_id, Decision.HUMAN_REVIEW, "human approval signature, identity, scope, or expiry verification failed")
+                return self._reject(request, Decision.HUMAN_REVIEW, "human approval signature, identity, scope, or expiry verification failed")
         if not request.authority:
-            return DecisionRecord(request.trace_id, Decision.BLOCKED, "no authority basis supplied")
+            return self._reject(request, Decision.BLOCKED, "no authority basis supplied")
         return DecisionRecord(request.trace_id, Decision.AUTHORIZED, "policy checks passed")
 
     def verify(
