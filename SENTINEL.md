@@ -48,7 +48,8 @@ Every consequential action should include:
 - `preconditions`, `evidence_refs`, `approval_refs`
 - `idempotency_key`, `decision`
 - `aud` — required: the receiving agent's ID. Sentinel blocks a missing or mismatched audience and logs the reason (proposed AIP-001 amendment).
-- `test_result` — `{ "run_id", "conclusion" }` CI attestation. Only `conclusion: "success"` with a run ID can move an action to `VERIFIED`; anything else, including `startup_failure`, is `FAILED`.
+- `test_result` — `{ "run_id", "conclusion" }` CI run reference. The caller-supplied `conclusion` is an untrusted claim and is never used as proof: `VERIFIED` requires an independently configured verifier (for example `GitHubActionsEvidenceVerifier`) to confirm the run against GitHub's records. Missing references, a missing verifier, verifier errors, or any non-success result (including `startup_failure`) end in `FAILED`.
+- `risk` — must be one of `low`, `medium`, `high`, `critical` (case-insensitive). Unknown labels are `BLOCKED` rather than treated as low risk.
 
 Never place raw credentials in prompts or logs; use redacted metadata and secret references.
 
