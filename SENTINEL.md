@@ -88,3 +88,27 @@ The Orchestrator plans and coordinates. Sentinel owns the authorization gate. Th
 ## Implementation Status
 
 This contract describes intended governance. It does not claim that council quorum, signed grants, persistent event sourcing, or production deployment controls are fully implemented. The current `sentinel.py` remains a minimal policy engine; implementation must proceed in small, testable changes with CI evidence.
+
+### Protected A7 dissent store (F34)
+
+Sentinel no longer relies on the caller to report a protected A7 dissent. When a
+dissent store is configured (`Sentinel(dissent_store=...)` or the
+`SENTINEL_DISSENT_DB` + `SENTINEL_HUMAN_PUBKEY` environment variables), every
+`authorize()` call reads `dissent_store.py` itself:
+
+- Any open A7 dissent whose target equals `*`, the request `trace_id`, its `intent`,
+  or one of its `scope` entries yields `HUMAN_REVIEW`. A `HumanApproval` envelope
+  does not lift it; only a signed human receipt row in the store does.
+- `protected_dissent_id` is now only a hint. A hinted ID that is not in the store
+  yields `HUMAN_REVIEW`.
+- Store missing, unreadable, corrupt, missing its append-only triggers, a broken
+  hash chain, a bad receipt signature, or a missing human public key all yield
+  `HUMAN_REVIEW`, never `AUTHORIZED`.
+
+Known limits: the hash chain has no secret, so removing the newest rows or
+rewriting the entire chain is not detected without an external anchor of
+`DissentStore.head()`. The A7 author check is a declared-identity check, not
+authentication. If no store is configured, Sentinel falls back to the legacy
+caller-hint behavior unless `require_dissent_store=True` or
+`SENTINEL_REQUIRE_DISSENT_STORE=1` is set; production deployments should set it.
+Operate the store with `python dissent_cli.py --help`.

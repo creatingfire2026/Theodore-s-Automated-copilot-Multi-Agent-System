@@ -69,3 +69,13 @@ def may_authorize(node_id: str) -> bool:
     """Council membership never confers operational authorization."""
     identity = AIP001_COUNCIL_IDENTITIES.get(node_id)
     return bool(identity and identity.may_authorize)
+
+
+def may_file_protected_dissent(node_id: str) -> bool:
+    """Only a council node flagged protected_dissent (A7) may write to the dissent store.
+
+    This checks the declared author string only; it does not authenticate the
+    writer. Filing a dissent can only add blocks, never remove them.
+    """
+    identity = AIP001_COUNCIL_IDENTITIES.get(node_id) if isinstance(node_id, str) else None
+    return bool(identity and identity.protected_dissent)
