@@ -229,6 +229,6 @@ class AgentSwarmRouter:
 
     def _run_optimization_pipeline(self):
         for sector in Sector:
-            metrics = self.sector_state[sector]
+            metrics = self.sector_state.get(sector) or SectorMetrics()
             anomaly_score = metrics.jitter + metrics.drift + metrics.stagnation
             self.routing_weights.sector_weights[sector] = round(1.0 + anomaly_score, 2)

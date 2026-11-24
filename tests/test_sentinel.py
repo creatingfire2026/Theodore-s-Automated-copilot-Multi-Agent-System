@@ -279,3 +279,50 @@ def test_github_actions_verifier_fails_closed_without_token_or_commit():
     verifier.token = "fixture-token"
     verifier.expected_commit_sha = ""
     assert not verifier(TestResult("77", "success"), req())
+
+
+# --- Audit hardening regression tests (local audit branch, 2026-11-21) ---
+
+def test_miscased_high_risk_still_requires_human():
+    for label in ("High", "HIGH", " critical "):
+        assert Sentinel().authorize(req(risk=label)).decision is Decision.HUMAN_REVIEW
+
+
+def test_unknown_or_missing_risk_label_fails_closed():
+    for label in ("severe", "", None, "lowish"):
+        assert Sentinel().authorize(req(risk=label)).decision is Decision.BLOCKED
+
+
+def test_medium_risk_authorizes_without_human():
+    assert Sentinel().authorize(req(risk="medium")).decision is Decision.AUTHORIZED
+
+
+def test_every_authorize_rejection_reaches_the_hook():
+    graves = []
+    sentinel = Sentinel(on_reject=lambda r, d: graves.append(d.decision))
+    sentinel.authorize(ActionRequest("agent", "test", [], "policy", aud="sentinel"))
+    sentinel.authorize(req(authority=""))
+    sentinel.authorize(req(risk="high"))
+    sentinel.authorize(req(risk="severe"))
+    assert graves == [Decision.BLOCKED, Decision.BLOCKED, Decision.HUMAN_REVIEW, Decision.BLOCKED]
+
+
+def test_github_verifier_rejects_non_ascii_run_id_and_bad_repository():
+    calls = []
+    def transport(url, headers, timeout):
+        calls.append(url)
+        return {}
+    request = req()
+    good = dict(workflow_path=".github/workflows/sentinel-ci.yml", workflow_id=1,
+                expected_commit_sha="a" * 40, token="fixture-token", transport=transport)
+    unicode_digits = "\u0661\u0662\u0663"
+    assert GitHubActionsEvidenceVerifier(repository="o/r", **good)(TestResult(unicode_digits, "success"), request) is False
+    assert GitHubActionsEvidenceVerifier(repository="o/r/../../x", **good)(TestResult("123", "success"), request) is False
+    assert calls == []
+
+
+def test_default_transport_refuses_non_github_api_urls():
+    import pytest
+    for url in ("file:///etc/passwd", "http://api.github.com/x", "https://evil.example/x"):
+        with pytest.raises(ValueError):
+            GitHubActionsEvidenceVerifier._http_get(url, {}, 1.0)

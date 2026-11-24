@@ -194,3 +194,11 @@ def test_authorization_is_rechecked_each_cycle_and_revocation_blocks_dispatch():
 def test_wrong_task_approval_is_rejected():
     router = authorized_router()
     assert router.authorize("east_lockdown", "human-grant:west_lockdown") is False
+
+
+def test_optimization_pipeline_tolerates_partial_telemetry():
+    from swarm_router import AgentSwarmRouter, Sector, SectorMetrics
+    router = AgentSwarmRouter()
+    router.process_cycle({Sector.NORTH: SectorMetrics(jitter=0.5)}, cycle_phase="morning")
+    assert router.routing_weights.sector_weights[Sector.NORTH] == 1.5
+    assert router.routing_weights.sector_weights[Sector.SOUTH] == 1.0

@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from sentinel import ActionRequest, TestResult
 
+
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 Transport = Callable[[str, dict[str, str], float], dict[str, Any]]
 
@@ -46,8 +49,10 @@ class GitHubActionsEvidenceVerifier:
 
     @staticmethod
     def _http_get(url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:
-        request = Request(url, headers=headers, method="GET")
-        with urlopen(request, timeout=timeout) as response:
+        if not url.startswith("https://api.github.com/"):
+            raise ValueError("refusing non-GitHub-API URL")
+        request = Request(url, headers=headers, method="GET")  # noqa: S310 - scheme/host checked above
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310
             return json.loads(response.read().decode("utf-8"))
 
     def __call__(self, result: TestResult, request: ActionRequest | None) -> bool:
@@ -56,7 +61,8 @@ class GitHubActionsEvidenceVerifier:
             or request is None
             or not self.expected_commit_sha
             or not result.run_id
-            or not result.run_id.isdecimal()
+            or not (result.run_id.isascii() and result.run_id.isdecimal())
+            or not _REPOSITORY_RE.fullmatch(self.repository or "")
         ):
             return False
 
