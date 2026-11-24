@@ -1,5 +1,5 @@
 """Regression tests for F34: protected A7 dissent can no longer be bypassed by omitting its ID."""
-import base64
+import json
 import os
 import sqlite3
 import stat
@@ -9,8 +9,17 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import dissent_cli
-from dissent_store import DissentStore, DissentStoreError, DissentWriteRejected, receipt_payload
+from aip001_council import file_protected_dissent
+from dissent_store import (
+    DissentStore, DissentStoreError, DissentWriteRejected, clear_dissent, compute_row_hash,
+    dissent_payload, load_private_key, receipt_payload, sign_b64,
+)
 from sentinel import ActionRequest, Decision, HumanApproval, Sentinel
+
+TRIGGERS = """
+CREATE TRIGGER dissent_log_no_update BEFORE UPDATE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END;
+CREATE TRIGGER dissent_log_no_delete BEFORE DELETE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END;
+"""
 
 
 def req(**kw):
@@ -30,49 +39,89 @@ def human_key():
 
 
 @pytest.fixture
-def store(tmp_path, human_key):
-    s = DissentStore(tmp_path / "dissent.db", _write_pub(human_key, tmp_path / "human.pub"))
-    s.initialize()
+def a7_key():
+    return Ed25519PrivateKey.generate()
+
+
+@pytest.fixture
+def store(tmp_path, human_key, a7_key):
+    (tmp_path / "db").mkdir()
+    (tmp_path / "anchor").mkdir()
+    s = DissentStore(tmp_path / "db" / "dissent.db", _write_pub(human_key, tmp_path / "human.pub"),
+                     _write_pub(a7_key, tmp_path / "a7.pub"), tmp_path / "anchor" / "head.json")
+    s.initialize(("A7", a7_key))
     return s
 
 
-def sign_receipt(store, key, dissent_id, human="theodore", reason="risk accepted", ts="2026-11-24T06:00:00Z"):
-    d = store.dissent(dissent_id)
-    payload = receipt_payload(d.dissent_id, d.row_hash, d.target, reason, human, ts)
-    return dict(dissent_id=dissent_id, author=human, reason=reason, ts=ts,
-                signature_b64=base64.b64encode(key.sign(payload)).decode())
+def decide(store, request=None, **kw):
+    return Sentinel(dissent_store=store, **kw).authorize(request or req())
+
+
+def file(store, a7_key, dissent_id="D-1", target="prod", reason="unsafe rollout"):
+    return file_protected_dissent(store, a7_key, dissent_id=dissent_id, target=target, reason=reason)
 
 
 def raw(store):
     return sqlite3.connect(store.path)
 
 
+def rows_of(store):
+    with raw(store) as c:
+        c.row_factory = sqlite3.Row
+        return [dict(r) for r in c.execute("SELECT * FROM dissent_log ORDER BY seq")]
+
+
+def rewrite_chain(store, rows):
+    """Attacker with file access: drop triggers, replace all rows with a self-consistent chain."""
+    prev = "0" * 64
+    c = raw(store)
+    c.executescript("DROP TRIGGER dissent_log_no_update; DROP TRIGGER dissent_log_no_delete;")
+    c.execute("DELETE FROM dissent_log")
+    for seq, row in enumerate(rows, start=1):
+        row = dict(row, seq=seq, prev_hash=prev)
+        row["row_hash"] = compute_row_hash(row, prev)
+        c.execute("INSERT INTO dissent_log VALUES (:seq,:kind,:dissent_id,:target,:reason,:author,:ts,"
+                  ":dissent_row_hash,:signature,:prev_hash,:row_hash)", row)
+        prev = row["row_hash"]
+    c.executescript(TRIGGERS)
+    c.commit()
+    c.close()
+
+
 # --- the bypass itself ----------------------------------------------------
 
-def test_omitted_dissent_id_with_open_dissent_is_human_review(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="unsafe rollout")
-    result = Sentinel(dissent_store=store).authorize(req())  # no protected_dissent_id supplied
+def test_omitted_dissent_id_with_open_dissent_is_human_review(store, a7_key):
+    file(store, a7_key)
+    result = decide(store)  # no protected_dissent_id supplied
     assert result.decision is Decision.HUMAN_REVIEW
     assert "D-1" in result.reason
 
 
-def test_dissent_matches_trace_intent_scope_or_wildcard(store):
-    store.append_dissent(author="A7", dissent_id="D-int", target="deploy", reason="r")
-    assert Sentinel(dissent_store=store).authorize(req(scope=["other"])).decision is Decision.HUMAN_REVIEW
+def test_a7_council_dissent_blocks_until_human_receipt(store, a7_key, human_key):
+    file_protected_dissent(store, a7_key, dissent_id="A7-2026-001", target="deploy", reason="unreviewed migration")
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+    assert decide(store, req(risk="medium")).decision is Decision.HUMAN_REVIEW
+    clear_dissent(store, human_key, dissent_id="A7-2026-001", human="theodore", reason="reviewed migration plan")
+    assert decide(store).decision is Decision.AUTHORIZED
 
 
-def test_wildcard_dissent_blocks_everything(store):
-    store.append_dissent(author="A7", dissent_id="D-all", target="*", reason="freeze")
-    assert Sentinel(dissent_store=store).authorize(req(intent="x", scope=["y"])).decision is Decision.HUMAN_REVIEW
+def test_dissent_matches_intent(store, a7_key):
+    file(store, a7_key, "D-int", target="deploy")
+    assert decide(store, req(scope=["other"])).decision is Decision.HUMAN_REVIEW
 
 
-def test_unrelated_dissent_does_not_block(store):
-    store.append_dissent(author="A7", dissent_id="D-9", target="billing", reason="r")
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.AUTHORIZED
+def test_wildcard_dissent_blocks_everything(store, a7_key):
+    file(store, a7_key, "D-all", target="*")
+    assert decide(store, req(intent="x", scope=["y"])).decision is Decision.HUMAN_REVIEW
 
 
-def test_human_approval_envelope_cannot_bypass_store_dissent(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_unrelated_dissent_does_not_block(store, a7_key):
+    file(store, a7_key, "D-9", target="billing")
+    assert decide(store).decision is Decision.AUTHORIZED
+
+
+def test_human_approval_envelope_cannot_bypass_store_dissent(store, a7_key):
+    file(store, a7_key)
     request = req(protected_dissent_node="A7", protected_dissent_id="D-1")
     approval = HumanApproval("a", "h", request.trace_id, request.intent, tuple(request.scope), "2099", "sig", "D-1", "ok")
     sentinel = Sentinel(dissent_store=store, human_approval_verifier=lambda g, a: True)
@@ -80,99 +129,126 @@ def test_human_approval_envelope_cannot_bypass_store_dissent(store):
 
 
 def test_hint_for_unknown_dissent_fails_closed(store):
-    request = req(protected_dissent_node="A7", protected_dissent_id="D-ghost")
-    assert Sentinel(dissent_store=store).authorize(request).decision is Decision.HUMAN_REVIEW
+    assert decide(store, req(protected_dissent_node="A7", protected_dissent_id="D-ghost")).decision is Decision.HUMAN_REVIEW
 
 
 # --- risk labels (PR #17 behavior kept) -----------------------------------
 
 def test_odd_case_risk_label_with_store_still_human_review(store):
     for label in ("High", "HIGH", " Critical "):
-        assert Sentinel(dissent_store=store).authorize(req(risk=label)).decision is Decision.HUMAN_REVIEW
+        assert decide(store, req(risk=label)).decision is Decision.HUMAN_REVIEW
 
 
 def test_unknown_risk_label_with_store_never_authorizes(store):
     for label in ("severe", "", None, "lowish"):
-        assert Sentinel(dissent_store=store).authorize(req(risk=label)).decision is not Decision.AUTHORIZED
+        assert decide(store, req(risk=label)).decision is not Decision.AUTHORIZED
 
 
-# --- writers ----------------------------------------------------------------
+# --- dissent writers: A7 only, signed -------------------------------------
 
 @pytest.mark.parametrize("author", ["A1", "A3", "Grok", "a7", "", "sentinel"])
-def test_non_a7_dissent_write_rejected(store, author):
+def test_non_a7_dissent_write_rejected(store, a7_key, author):
     with pytest.raises(DissentWriteRejected):
-        store.append_dissent(author=author, dissent_id="D-x", target="prod", reason="r")
+        file_protected_dissent(store, a7_key, dissent_id="D-x", target="prod", reason="r", node_id=author)
     assert store.head()[0] == 0
 
 
-def test_duplicate_dissent_id_rejected(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_unsigned_dissent_rejected_on_write(store, a7_key):
+    with pytest.raises(DissentWriteRejected, match="unsigned"):
+        store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r", ts="t",
+                             signature_b64="", anchor_signer=("A7", a7_key))
+    assert store.head()[0] == 0
+
+
+def test_fake_a7_wrong_key_dissent_rejected(store):
     with pytest.raises(DissentWriteRejected):
-        store.append_dissent(author="A7", dissent_id="D-1", target="other", reason="r")
+        file_protected_dissent(store, Ed25519PrivateKey.generate(), dissent_id="D-1", target="prod", reason="r")
+    assert store.head()[0] == 0
 
 
-def test_receipt_with_wrong_key_does_not_clear(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_unsigned_dissent_smuggled_into_file_is_human_review(store, a7_key):
+    file(store, a7_key, "D-0", target="billing")
+    forged = dict(rows_of(store)[0], dissent_id="D-fake", signature="")
+    rewrite_chain(store, rows_of(store) + [forged])
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "invalid A7 signature" in result.reason
+
+
+def test_duplicate_dissent_id_rejected(store, a7_key):
+    file(store, a7_key)
     with pytest.raises(DissentWriteRejected):
-        store.append_receipt(**sign_receipt(store, Ed25519PrivateKey.generate(), "D-1"))
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+        file(store, a7_key, "D-1", target="other")
 
 
-def test_forged_receipt_inserted_directly_fails_closed(store):
-    """A bad-signature receipt smuggled in with a correct hash chain still fails closed."""
-    from dissent_store import compute_row_hash
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+# --- receipts --------------------------------------------------------------
+
+def _receipt(store, key, dissent_id, human="theodore", reason="risk accepted", ts="2026-11-24T06:00:00Z"):
+    d = store.dissent(dissent_id)
+    payload = receipt_payload(d.dissent_id, d.row_hash, d.target, reason, human, ts)
+    return dict(dissent_id=dissent_id, author=human, reason=reason, ts=ts, signature_b64=sign_b64(key, payload))
+
+
+def test_receipt_with_wrong_key_does_not_clear(store, a7_key, human_key):
+    file(store, a7_key)
+    with pytest.raises(DissentWriteRejected):
+        store.append_receipt(**_receipt(store, Ed25519PrivateKey.generate(), "D-1"), anchor_signer=("human", human_key))
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+
+
+def test_a7_cannot_clear_its_own_dissent(store, a7_key):
+    file(store, a7_key)
+    with pytest.raises(DissentWriteRejected):
+        clear_dissent(store, a7_key, dissent_id="D-1", human="A7", reason="self-clear")
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+
+
+def test_forged_receipt_inserted_directly_fails_closed(store, a7_key):
+    file(store, a7_key)
     d = store.dissent("D-1")
-    good = sign_receipt(store, Ed25519PrivateKey.generate(), "D-1")
-    row = {"seq": 2, "kind": "receipt", "dissent_id": "D-1", "target": d.target, "reason": good["reason"],
-           "author": good["author"], "ts": good["ts"], "dissent_row_hash": d.row_hash,
-           "signature": good["signature_b64"], "prev_hash": d.row_hash}
-    row["row_hash"] = compute_row_hash(row, d.row_hash)
-    with raw(store) as c:
-        c.execute("INSERT INTO dissent_log VALUES (:seq,:kind,:dissent_id,:target,:reason,:author,:ts,"
-                  ":dissent_row_hash,:signature,:prev_hash,:row_hash)", row)
-    result = Sentinel(dissent_store=store).authorize(req())
+    bad = _receipt(store, Ed25519PrivateKey.generate(), "D-1")
+    row = {"kind": "receipt", "dissent_id": "D-1", "target": d.target, "reason": bad["reason"],
+           "author": bad["author"], "ts": bad["ts"], "dissent_row_hash": d.row_hash, "signature": bad["signature_b64"]}
+    rewrite_chain(store, rows_of(store) + [row])
+    result = decide(store)
     assert result.decision is Decision.HUMAN_REVIEW
     assert "invalid human signature" in result.reason
 
 
-def test_valid_receipt_clears_and_request_authorizes(store, human_key):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
-    store.append_receipt(**sign_receipt(store, human_key, "D-1"))
+def test_valid_receipt_clears_and_request_authorizes(store, a7_key, human_key):
+    file(store, a7_key)
+    clear_dissent(store, human_key, dissent_id="D-1", human="theodore", reason="risk accepted")
     assert store.open_dissents() == []
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.AUTHORIZED
-    hinted = req(protected_dissent_node="A7", protected_dissent_id="D-1")
-    assert Sentinel(dissent_store=store).authorize(hinted).decision is Decision.AUTHORIZED
+    assert decide(store).decision is Decision.AUTHORIZED
+    assert decide(store, req(protected_dissent_node="A7", protected_dissent_id="D-1")).decision is Decision.AUTHORIZED
 
 
-def test_receipt_cannot_be_replayed_onto_another_dissent(store, human_key):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
-    store.append_dissent(author="A7", dissent_id="D-2", target="prod", reason="r")
-    receipt = sign_receipt(store, human_key, "D-1")
+def test_receipt_cannot_be_replayed_onto_another_dissent(store, a7_key, human_key):
+    file(store, a7_key, "D-1")
+    file(store, a7_key, "D-2")
+    receipt = _receipt(store, human_key, "D-1")
     receipt["dissent_id"] = "D-2"
     with pytest.raises(DissentWriteRejected):
-        store.append_receipt(**receipt)
+        store.append_receipt(**receipt, anchor_signer=("human", human_key))
 
 
 # --- tamper / integrity ------------------------------------------------------
 
-def test_triggers_block_update_and_delete(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_triggers_block_update_and_delete(store, a7_key):
+    file(store, a7_key)
     with raw(store) as c, pytest.raises(sqlite3.IntegrityError):
         c.execute("UPDATE dissent_log SET target='nothing'")
     with raw(store) as c, pytest.raises(sqlite3.IntegrityError):
         c.execute("DELETE FROM dissent_log")
 
 
-def test_tampered_row_after_dropping_triggers_is_human_review(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_tampered_row_after_dropping_triggers_is_human_review(store, a7_key):
+    file(store, a7_key)
     with raw(store) as c:
         c.execute("DROP TRIGGER dissent_log_no_update")
         c.execute("UPDATE dissent_log SET target='nothing-real' WHERE dissent_id='D-1'")
-        # restore the trigger so only the chain can catch it
-        c.execute("CREATE TRIGGER dissent_log_no_update BEFORE UPDATE ON dissent_log "
-                  "BEGIN SELECT RAISE(ABORT, 'dissent_log is append-only'); END")
-    result = Sentinel(dissent_store=store).authorize(req())
+        c.execute("CREATE TRIGGER dissent_log_no_update BEFORE UPDATE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END")
+    result = decide(store)
     assert result.decision is Decision.HUMAN_REVIEW
     assert "hash chain broken" in result.reason
 
@@ -180,51 +256,86 @@ def test_tampered_row_after_dropping_triggers_is_human_review(store):
 def test_dropped_triggers_alone_fail_closed(store):
     with raw(store) as c:
         c.execute("DROP TRIGGER dissent_log_no_delete")
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+    assert decide(store).decision is Decision.HUMAN_REVIEW
 
 
-def test_deleted_row_breaks_chain_is_human_review(store):
-    store.append_dissent(author="A7", dissent_id="D-0", target="billing", reason="r")
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
-    store.append_dissent(author="A7", dissent_id="D-2", target="billing", reason="r")
+def test_deleted_middle_row_breaks_chain_is_human_review(store, a7_key):
+    for i, t in enumerate(("billing", "prod", "billing")):
+        file(store, a7_key, f"D-{i}", target=t)
     with raw(store) as c:
         c.execute("DROP TRIGGER dissent_log_no_delete")
         c.execute("DELETE FROM dissent_log WHERE dissent_id='D-1'")
-        c.execute("CREATE TRIGGER dissent_log_no_delete BEFORE DELETE ON dissent_log "
-                  "BEGIN SELECT RAISE(ABORT, 'dissent_log is append-only'); END")
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+    assert decide(store).decision is Decision.HUMAN_REVIEW
 
 
-def test_deleted_row_with_seq_renumbered_still_breaks_chain(store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
-    store.append_dissent(author="A7", dissent_id="D-2", target="billing", reason="r")
-    with raw(store) as c:
+def test_truncation_of_newest_rows_detected_by_anchor(store, a7_key):
+    file(store, a7_key, "D-0", target="billing")
+    file(store, a7_key, "D-1", target="prod")
+    with raw(store) as c:  # remove the newest row: the chain alone would still verify
         c.execute("DROP TRIGGER dissent_log_no_delete")
-        c.execute("DROP TRIGGER dissent_log_no_update")
-        c.execute("DELETE FROM dissent_log WHERE seq=1")
-        c.execute("UPDATE dissent_log SET seq=1 WHERE seq=2")
-        c.executescript("""
-            CREATE TRIGGER dissent_log_no_update BEFORE UPDATE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END;
-            CREATE TRIGGER dissent_log_no_delete BEFORE DELETE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END;""")
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+        c.execute("DELETE FROM dissent_log WHERE seq=2")
+        c.execute("CREATE TRIGGER dissent_log_no_delete BEFORE DELETE ON dissent_log BEGIN SELECT RAISE(ABORT,'x'); END")
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "truncated" in result.reason
 
 
-def test_missing_store_is_human_review(tmp_path, human_key):
-    s = DissentStore(tmp_path / "nope.db", _write_pub(human_key, tmp_path / "h.pub"))
-    assert Sentinel(dissent_store=s).authorize(req()).decision is Decision.HUMAN_REVIEW
-    assert not (tmp_path / "nope.db").exists()  # read path must not create it
+def test_consistent_full_chain_rewrite_detected_by_anchor(store, a7_key):
+    file(store, a7_key, "D-0", target="billing")
+    file(store, a7_key, "D-1", target="prod")
+    file(store, a7_key, "D-2", target="billing")
+    rows = rows_of(store)
+    # Every row keeps its valid A7 signature and the rewritten chain is self-consistent,
+    # so only the signed head anchor can catch these.
+    rewrite_chain(store, [rows[0], rows[2]])  # D-1 silently removed, chain re-linked
+    assert "truncated" in decide(store).reason
+    rewrite_chain(store, [rows[0], rows[2], rows[1]])  # same count, reordered
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "head anchor" in result.reason
+
+
+def test_anchor_missing_tampered_or_wrongly_signed_is_human_review(store, a7_key):
+    file(store, a7_key)
+    original = store.anchor_path.read_text()
+    data = json.loads(original)
+    store.anchor_path.write_text(json.dumps(dict(data, count=0, head_hash="0" * 64)))
+    assert "signature invalid" in decide(store).reason
+    store.anchor_path.unlink()
+    assert "anchor missing" in decide(store).reason
+    store.anchor_path.write_text("{not json")
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+    store.anchor_path.write_text(original)
+    with pytest.raises(DissentWriteRejected):  # anchor signer must be a configured key
+        store.append_dissent(author="A7", dissent_id="D-2", target="x", reason="r", ts="t",
+                             signature_b64=sign_b64(a7_key, dissent_payload("D-2", "x", "r", "A7", "t")),
+                             anchor_signer=("A7", Ed25519PrivateKey.generate()))
+    assert decide(store).decision is Decision.HUMAN_REVIEW  # D-1 still open, store intact
+
+
+def test_anchor_inside_db_dir_is_rejected(tmp_path, human_key, a7_key):
+    s = DissentStore(tmp_path / "d.db", _write_pub(human_key, tmp_path / "h.pub"),
+                     _write_pub(a7_key, tmp_path / "a.pub"), tmp_path / "anchor.json")
+    with pytest.raises(DissentStoreError, match="outside"):
+        s.initialize(("A7", a7_key))
+
+
+def test_missing_store_is_human_review(tmp_path, store):
+    s = DissentStore(tmp_path / "nope" / "nope.db", store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path)
+    assert decide(s).decision is Decision.HUMAN_REVIEW
+    assert not (tmp_path / "nope" / "nope.db").exists()  # read path must not create it
 
 
 def test_corrupt_store_is_human_review(store):
     store.path.write_bytes(b"this is not a sqlite database" * 100)
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+    assert decide(store).decision is Decision.HUMAN_REVIEW
 
 
 @pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="chmod is not enforced for root")
 def test_unreadable_store_is_human_review(store):
     os.chmod(store.path, 0)
     try:
-        assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+        assert decide(store).decision is Decision.HUMAN_REVIEW
     finally:
         os.chmod(store.path, 0o600)
 
@@ -233,47 +344,102 @@ def test_store_that_raises_unexpectedly_is_human_review(store, monkeypatch):
     def boom():
         raise RuntimeError("disk on fire")
     monkeypatch.setattr(store, "open_dissents", boom)
-    assert Sentinel(dissent_store=store).authorize(req()).decision is Decision.HUMAN_REVIEW
+    assert decide(store).decision is Decision.HUMAN_REVIEW
 
 
-def test_missing_human_pubkey_is_human_review(tmp_path):
-    s = DissentStore(tmp_path / "d.db", None)
-    s.initialize()
-    assert Sentinel(dissent_store=s).authorize(req()).decision is Decision.HUMAN_REVIEW
+@pytest.mark.parametrize("missing", ["human_pubkey_path", "a7_pubkey_path", "anchor_path"])
+def test_missing_key_or_anchor_config_is_human_review(store, missing):
+    setattr(store, missing, None)
+    assert decide(store).decision is Decision.HUMAN_REVIEW
 
 
-def test_required_store_not_configured_is_human_review(monkeypatch):
+# --- configuration --------------------------------------------------------
+
+def test_require_store_env_with_no_store_is_human_review(monkeypatch):
+    monkeypatch.delenv("SENTINEL_DISSENT_DB", raising=False)
+    monkeypatch.setenv("SENTINEL_REQUIRE_DISSENT_STORE", "1")
+    result = Sentinel().authorize(req())
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "not configured" in result.reason
+
+
+def test_required_store_kwarg_not_configured_is_human_review(monkeypatch):
     monkeypatch.delenv("SENTINEL_DISSENT_DB", raising=False)
     assert Sentinel(require_dissent_store=True).authorize(req()).decision is Decision.HUMAN_REVIEW
 
 
-def test_env_configures_store(monkeypatch, store):
-    store.append_dissent(author="A7", dissent_id="D-1", target="prod", reason="r")
+def test_env_configures_store(monkeypatch, store, a7_key):
+    file(store, a7_key)
     monkeypatch.setenv("SENTINEL_DISSENT_DB", str(store.path))
     monkeypatch.setenv("SENTINEL_HUMAN_PUBKEY", str(store.human_pubkey_path))
+    monkeypatch.setenv("SENTINEL_A7_PUBKEY", str(store.a7_pubkey_path))
+    monkeypatch.setenv("SENTINEL_DISSENT_ANCHOR", str(store.anchor_path))
+    monkeypatch.setenv("SENTINEL_REQUIRE_DISSENT_STORE", "1")
     assert Sentinel().authorize(req()).decision is Decision.HUMAN_REVIEW
+    assert Sentinel().authorize(req(scope=["elsewhere"], intent="read")).decision is Decision.AUTHORIZED
 
 
-# --- CLI --------------------------------------------------------------------
+# --- CLI, keys and passphrases ---------------------------------------------
 
-def test_cli_keygen_writes_0600_key_and_never_prints_it(tmp_path, capsys):
-    out = tmp_path / "keys" / "human_ed25519"
-    assert dissent_cli.main(["keygen", "--out", str(out)]) == 0
-    assert stat.S_IMODE(out.stat().st_mode) == 0o600
+def _cli_env(tmp_path, monkeypatch):
+    sec = tmp_path / "secrets"
+    for name, val in {
+        "SENTINEL_DISSENT_DB": sec / "db" / "dissent.db",
+        "SENTINEL_DISSENT_ANCHOR": sec / "anchor" / "head.json",
+        "SENTINEL_HUMAN_PUBKEY": sec / "keys" / "human_ed25519.pub",
+        "SENTINEL_HUMAN_KEY": sec / "keys" / "human_ed25519",
+        "SENTINEL_HUMAN_KEY_PASSPHRASE_FILE": sec / "human_key.passphrase",
+        "SENTINEL_A7_PUBKEY": sec / "keys" / "a7_ed25519.pub",
+        "SENTINEL_A7_KEY": sec / "keys" / "a7_ed25519",
+    }.items():
+        monkeypatch.setenv(name, str(val))
+    return sec
+
+
+def test_cli_full_flow_with_passphrase(tmp_path, monkeypatch, capsys):
+    sec = _cli_env(tmp_path, monkeypatch)
+    pf, hk, ak = sec / "human_key.passphrase", sec / "keys" / "human_ed25519", sec / "keys" / "a7_ed25519"
+    assert dissent_cli.main(["gen-passphrase", "--out", str(pf)]) == 0
+    assert dissent_cli.main(["keygen", "--out", str(hk), "--passphrase-file", str(pf)]) == 0
+    assert dissent_cli.main(["keygen", "--out", str(ak), "--unencrypted"]) == 0
     printed = capsys.readouterr().out
-    assert "PRIVATE KEY" not in printed and out.read_text().splitlines()[1] not in printed
-    assert dissent_cli.main(["keygen", "--out", str(out)]) == 2  # refuses to overwrite
+    passphrase = pf.read_text().strip()
+    assert len(passphrase) >= 40 and passphrase not in printed and "PRIVATE KEY" not in printed
+    for p in (pf, hk, ak):
+        assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert b"ENCRYPTED PRIVATE KEY" in hk.read_bytes()
+    with pytest.raises(DissentStoreError):
+        load_private_key(hk)  # no passphrase -> cannot load
+    assert dissent_cli.main(["init"]) == 0
+    assert dissent_cli.main(["add-dissent", "--id", "D-1", "--target", "prod", "--reason", "r"]) == 0
+    store = DissentStore.from_env()
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+    assert dissent_cli.main(["clear", "--id", "D-1", "--human", "theodore", "--reason", "accepted"]) == 0
+    assert decide(store).decision is Decision.AUTHORIZED
+    assert dissent_cli.main(["status"]) == 0
+    assert passphrase not in capsys.readouterr().out
 
 
-def test_cli_end_to_end_clear(tmp_path):
-    key, db = tmp_path / "k", tmp_path / "d.db"
-    assert dissent_cli.main(["keygen", "--out", str(key)]) == 0
-    common = ["--db", str(db), "--pubkey", f"{key}.pub"]
-    assert dissent_cli.main(["init", *common]) == 0
-    assert dissent_cli.main(["add-dissent", *common, "--id", "D-1", "--target", "prod", "--reason", "r"]) == 0
-    s = DissentStore(db, f"{key}.pub")
-    assert Sentinel(dissent_store=s).authorize(req()).decision is Decision.HUMAN_REVIEW
-    assert dissent_cli.main(["clear", *common, "--key", str(key), "--id", "D-1",
-                             "--human", "theodore", "--reason", "accepted"]) == 0
-    assert Sentinel(dissent_store=s).authorize(req()).decision is Decision.AUTHORIZED
-    assert dissent_cli.main(["status", *common]) == 0
+def test_cli_clear_wrong_passphrase_fails_and_dissent_stays_open(tmp_path, monkeypatch, capsys):
+    sec = _cli_env(tmp_path, monkeypatch)
+    pf, hk, ak = sec / "human_key.passphrase", sec / "keys" / "human_ed25519", sec / "keys" / "a7_ed25519"
+    dissent_cli.main(["gen-passphrase", "--out", str(pf)])
+    dissent_cli.main(["keygen", "--out", str(hk), "--passphrase-file", str(pf)])
+    dissent_cli.main(["keygen", "--out", str(ak), "--unencrypted"])
+    dissent_cli.main(["init"])
+    dissent_cli.main(["add-dissent", "--id", "D-1", "--target", "prod", "--reason", "r"])
+    monkeypatch.delenv("SENTINEL_HUMAN_KEY_PASSPHRASE_FILE")
+    monkeypatch.setattr(dissent_cli.getpass, "getpass", lambda prompt="": "wrong passphrase")
+    assert dissent_cli.main(["clear", "--id", "D-1", "--human", "t", "--reason", "x"]) == 1
+    monkeypatch.setattr(dissent_cli.getpass, "getpass", lambda prompt="": pf.read_text().strip())
+    assert decide(DissentStore.from_env()).decision is Decision.HUMAN_REVIEW
+    assert dissent_cli.main(["clear", "--id", "D-1", "--human", "t", "--reason", "x"]) == 0  # prompt path
+    assert decide(DissentStore.from_env()).decision is Decision.AUTHORIZED
+
+
+def test_cli_refuses_overwrite_and_world_readable_passphrase(tmp_path):
+    pf = tmp_path / "p"
+    assert dissent_cli.main(["gen-passphrase", "--out", str(pf)]) == 0
+    assert dissent_cli.main(["gen-passphrase", "--out", str(pf)]) == 2
+    os.chmod(pf, 0o644)
+    assert dissent_cli.main(["keygen", "--out", str(tmp_path / "k"), "--passphrase-file", str(pf)]) == 1
