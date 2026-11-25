@@ -104,12 +104,34 @@ def dissent_payload(dissent_id: str, target: str, reason: str, author: str, ts: 
                        "reason": reason, "author": author, "ts": ts})
 
 
+RECEIPT_FIELDS = ("kind", "dissent_id", "dissent_row_hash", "target", "reason", "author", "ts")
+
+
 def receipt_payload(dissent_id: str, dissent_row_hash: str, target: str, reason: str, author: str, ts: str) -> bytes:
     """Exact bytes a human signs to clear one specific dissent row."""
     return _canonical({
         "kind": "receipt", "dissent_id": dissent_id, "dissent_row_hash": dissent_row_hash,
         "target": target, "reason": reason, "author": author, "ts": ts,
     })
+
+
+def parse_receipt_payload(payload_bytes: bytes) -> dict[str, str]:
+    """Decode and strictly validate canonical receipt payload bytes."""
+    try:
+        data = json.loads(payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise DissentWriteRejected(f"receipt payload is not valid UTF-8 JSON: {exc.__class__.__name__}") from None
+    if not isinstance(data, dict) or set(data) != set(RECEIPT_FIELDS):
+        raise DissentWriteRejected("receipt payload has unexpected or missing fields")
+    if not all(isinstance(data[k], str) for k in RECEIPT_FIELDS) or data["kind"] != "receipt":
+        raise DissentWriteRejected("receipt payload fields must be strings with kind='receipt'")
+    canonical = receipt_payload(
+        data["dissent_id"], data["dissent_row_hash"], data["target"],
+        data["reason"], data["author"], data["ts"],
+    )
+    if payload_bytes != canonical:
+        raise DissentWriteRejected("receipt payload is not canonical JSON")
+    return data
 
 
 def anchor_payload(count: int, head_hash: str, ts: str, signer: str) -> bytes:
@@ -127,7 +149,8 @@ def _load_public_key(path, label: str):
     if not path:
         raise DissentStoreError(f"no {label} public key configured")
     try:
-        key = load_pem_public_key(Path(path).read_bytes())
+        pem_bytes = Path(path).expanduser().read_bytes().strip().replace(b"\r\n", b"\n")
+        key = load_pem_public_key(pem_bytes)
     except Exception as exc:  # noqa: BLE001 - any failure is a config failure
         raise DissentStoreError(f"{label} public key unreadable: {exc.__class__.__name__}") from None
     if not isinstance(key, Ed25519PublicKey):
@@ -160,6 +183,18 @@ def load_private_key(path, passphrase: bytes | None = None):
 def _public_bytes(key) -> bytes:
     from cryptography.hazmat.primitives import serialization
     return key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+def public_key_info(key) -> dict[str, str]:
+    """Return raw 32-byte encodings and SHA-256 fingerprints for an Ed25519 public key."""
+    raw = _public_bytes(key)
+    digest = hashlib.sha256(raw).digest()
+    return {
+        "raw_hex": raw.hex(),
+        "raw_b64": base64.b64encode(raw).decode("ascii"),
+        "sha256_hex": digest.hex(),
+        "fingerprint": "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("="),
+    }
 
 
 def _verify(public_key, signature_b64: str, payload: bytes) -> bool:
@@ -440,6 +475,13 @@ def clear_dissent(store: DissentStore, human_key, *, dissent_id: str, human: str
     sig = sign_b64(human_key, receipt_payload(dissent.dissent_id, dissent.row_hash, dissent.target, reason, human, ts))
     return store.append_receipt(dissent_id=dissent_id, author=human, reason=reason, ts=ts,
                                 signature_b64=sig, anchor_signer=("human", human_key))
+
+
+def clear_dissent_signed(store: DissentStore, *, dissent_id: str, human: str, reason: str, ts: str,
+                         signature_b64: str, anchor_signer) -> str:
+    """Append an externally signed human clearing receipt (e.g. signed offline on Magic via openssl)."""
+    return store.append_receipt(dissent_id=dissent_id, author=human, reason=reason, ts=ts,
+                                signature_b64=signature_b64, anchor_signer=anchor_signer)
 
 
 def dissent_matches(dissent: Dissent, *, trace_id: str, intent: str, scope: list[str]) -> bool:

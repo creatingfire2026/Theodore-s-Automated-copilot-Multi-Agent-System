@@ -117,4 +117,10 @@ Known limits: restoring an older database together with its older anchor file
 (a consistent rollback) is not detected; whoever holds a private key can sign
 as that role, so keep the human key and passphrase away from agent hosts. The
 A7 private key is stored unencrypted (0600) so the agent can sign unattended.
-Operate the store with `python dissent_cli.py --help`.
+Operate the store with `python dissent_cli.py --help`. For an offline human key
+(e.g. `openssl` on Termux/Android), emit the canonical payload with
+`python dissent_cli.py receipt-payload <dissent_id>`, sign with
+`magic_sign_receipt.sh` (`openssl pkeyutl -sign -rawin`), and record the
+receipt with `python dissent_cli.py clear --payload-b64 ... --sig-b64 ...`
+(the box's A7 key re-signs the head anchor, while only the human key can sign
+the receipt itself).
