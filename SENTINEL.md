@@ -88,3 +88,39 @@ The Orchestrator plans and coordinates. Sentinel owns the authorization gate. Th
 ## Implementation Status
 
 This contract describes intended governance. It does not claim that council quorum, signed grants, persistent event sourcing, or production deployment controls are fully implemented. The current `sentinel.py` remains a minimal policy engine; implementation must proceed in small, testable changes with CI evidence.
+
+### Protected A7 dissent store (F34)
+
+Sentinel no longer relies on the caller to report a protected A7 dissent. Every
+`authorize()` call reads `dissent_store.py` itself:
+
+- Any open A7 dissent whose target equals `*`, the request `trace_id`, its `intent`,
+  or one of its `scope` entries yields `HUMAN_REVIEW`. A `HumanApproval` envelope
+  does not lift it; only a human-signed receipt row in the store does.
+- `protected_dissent_id` is now only a hint. A hinted ID that is not in the store
+  yields `HUMAN_REVIEW`.
+- Every dissent row is Ed25519-signed by the A7 key (`aip001_council.file_protected_dissent`);
+  every receipt is signed by the human key (passphrase-encrypted at rest).
+- After each append a signed head anchor (row count + head hash) is written to a
+  file outside the database directory. The store must equal or extend it.
+- Store missing, unreadable, corrupt, missing triggers, broken hash chain, bad
+  A7 or human signature, truncation, rewrite, missing/invalid anchor, or missing
+  key configuration all yield `HUMAN_REVIEW`, never `AUTHORIZED`.
+
+**Production setting:** `SENTINEL_REQUIRE_DISSENT_STORE=1` (with
+`SENTINEL_DISSENT_DB`, `SENTINEL_DISSENT_ANCHOR`, `SENTINEL_HUMAN_PUBKEY`,
+`SENTINEL_A7_PUBKEY`, and for writers `SENTINEL_A7_KEY`). Without it and without a
+configured store, Sentinel keeps the legacy caller-hint behavior (kept only so
+library/unit use stays opt-in).
+
+Known limits: restoring an older database together with its older anchor file
+(a consistent rollback) is not detected; whoever holds a private key can sign
+as that role, so keep the human key and passphrase away from agent hosts. The
+A7 private key is stored unencrypted (0600) so the agent can sign unattended.
+Operate the store with `python dissent_cli.py --help`. For an offline human key
+(e.g. `openssl` on Termux/Android), emit the canonical payload with
+`python dissent_cli.py receipt-payload <dissent_id>`, sign with
+`magic_sign_receipt.sh` (`openssl pkeyutl -sign -rawin`), and record the
+receipt with `python dissent_cli.py clear --payload-b64 ... --sig-b64 ...`
+(the box's A7 key re-signs the head anchor, while only the human key can sign
+the receipt itself).

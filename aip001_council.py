@@ -69,3 +69,38 @@ def may_authorize(node_id: str) -> bool:
     """Council membership never confers operational authorization."""
     identity = AIP001_COUNCIL_IDENTITIES.get(node_id)
     return bool(identity and identity.may_authorize)
+
+
+def may_file_protected_dissent(node_id: str) -> bool:
+    """Only a council node flagged protected_dissent (A7) may write to the dissent store.
+
+    This checks the declared author string only; it does not authenticate the
+    writer. Filing a dissent can only add blocks, never remove them.
+    """
+    identity = AIP001_COUNCIL_IDENTITIES.get(node_id) if isinstance(node_id, str) else None
+    return bool(identity and identity.protected_dissent)
+
+
+def load_a7_signing_key(path: str | None = None):
+    """Load A7's Ed25519 private key (default path: $SENTINEL_A7_KEY)."""
+    import os
+    from dissent_store import DissentStoreError, load_private_key
+
+    path = path or os.environ.get("SENTINEL_A7_KEY")
+    if not path:
+        raise DissentStoreError("no A7 signing key configured (SENTINEL_A7_KEY)")
+    return load_private_key(path)
+
+
+def file_protected_dissent(store, a7_signing_key, *, dissent_id: str, target: str, reason: str,
+                           node_id: str = "A7") -> str:
+    """A7 files a protected dissent: signed with the A7 key, appended to the store,
+    and the new head anchor signed by A7. Returns the new row hash."""
+    from dissent_store import DissentWriteRejected, dissent_payload, now_ts, sign_b64
+
+    if not may_file_protected_dissent(node_id):
+        raise DissentWriteRejected(f"council node {node_id!r} may not file a protected dissent")
+    ts = now_ts()
+    signature = sign_b64(a7_signing_key, dissent_payload(dissent_id, target, reason, node_id, ts))
+    return store.append_dissent(author=node_id, dissent_id=dissent_id, target=target, reason=reason,
+                                ts=ts, signature_b64=signature, anchor_signer=("A7", a7_signing_key))

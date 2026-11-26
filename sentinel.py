@@ -1,10 +1,13 @@
 """Minimal deterministic Sentinel policy engine."""
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
 from uuid import uuid4
+
+from dissent_store import DissentStore, DissentStoreError, dissent_matches
 
 logger = logging.getLogger("sentinel")
 
@@ -80,6 +83,8 @@ class Sentinel:
         on_reject: Callable[[ActionRequest, DecisionRecord], None] | None = None,
         run_evidence_verifier: RunEvidenceVerifier | None = None,
         human_approval_verifier: HumanApprovalVerifier | None = None,
+        dissent_store: DissentStore | None = None,
+        require_dissent_store: bool | None = None,
     ) -> None:
         if not agent_id:
             raise ValueError("Sentinel needs a non-empty agent_id")
@@ -87,6 +92,40 @@ class Sentinel:
         self.on_reject = on_reject
         self.run_evidence_verifier = run_evidence_verifier
         self.human_approval_verifier = human_approval_verifier
+        # F34: Sentinel looks protected A7 dissents up itself instead of trusting the caller.
+        self.dissent_store = dissent_store if dissent_store is not None else DissentStore.from_env()
+        if require_dissent_store is None:
+            require_dissent_store = os.environ.get("SENTINEL_REQUIRE_DISSENT_STORE", "") == "1"
+        self.require_dissent_store = require_dissent_store
+
+    def _check_dissent_store(self, request: ActionRequest) -> tuple[DecisionRecord | None, bool]:
+        """Return (rejection or None, hinted_dissent_cleared). Any store failure fails closed."""
+        if self.dissent_store is None:
+            if self.require_dissent_store:
+                return self._reject(request, Decision.HUMAN_REVIEW, "dissent store required but not configured"), False
+            return None, False  # legacy mode: only the caller-supplied hint is honored
+        try:
+            open_dissents = self.dissent_store.open_dissents()
+            known = self.dissent_store.known_dissent_ids() if request.protected_dissent_id else set()
+        except DissentStoreError as exc:
+            return self._reject(request, Decision.HUMAN_REVIEW, f"dissent store failed integrity check: {exc}"), False
+        except Exception as exc:  # noqa: BLE001 - unexpected failure must not authorize
+            logger.exception("dissent store raised for trace=%s", request.trace_id)
+            return self._reject(request, Decision.HUMAN_REVIEW, f"dissent store error: {exc.__class__.__name__}"), False
+        for dissent in open_dissents:
+            if dissent.dissent_id == request.protected_dissent_id or dissent_matches(
+                dissent, trace_id=request.trace_id, intent=request.intent, scope=list(request.scope),
+            ):
+                return self._reject(
+                    request, Decision.HUMAN_REVIEW,
+                    f"open protected A7 dissent {dissent.dissent_id!r} on {dissent.target!r} requires a signed human receipt",
+                ), False
+        if request.protected_dissent_id:
+            if request.protected_dissent_id not in known:
+                return self._reject(request, Decision.HUMAN_REVIEW,
+                                    f"claimed dissent {request.protected_dissent_id!r} is not in the dissent store"), False
+            return None, True  # hinted dissent exists and has a valid human receipt
+        return None, False
 
     def _reject(self, request: ActionRequest, decision: Decision, reason: str) -> DecisionRecord:
         record = DecisionRecord(request.trace_id, decision, reason)
@@ -114,11 +153,15 @@ class Sentinel:
         if risk not in self.KNOWN_RISK:
             # Fail closed: an unknown or miscased label must never be treated as low risk.
             return self._reject(request, Decision.BLOCKED, f"unknown risk label {request.risk!r}")
+        dissent_rejection, hint_cleared = self._check_dissent_store(request)
+        if dissent_rejection is not None:
+            return dissent_rejection
         requires_human = risk in self.HIGH_RISK
-        if requires_human or request.protected_dissent_id:
+        legacy_hint = bool(request.protected_dissent_id) and not hint_cleared
+        if requires_human or legacy_hint:
             approval = human_approval
             if approval is None:
-                reason = "protected A7 dissent requires an authenticated human override" if request.protected_dissent_id else "high-impact action requires authenticated human approval"
+                reason = "protected A7 dissent requires an authenticated human override" if legacy_hint else "high-impact action requires authenticated human approval"
                 return self._reject(request, Decision.HUMAN_REVIEW, reason)
             if not (
                 approval.approval_id
@@ -130,7 +173,7 @@ class Sentinel:
                 and approval.scope == tuple(request.scope)
             ):
                 return self._reject(request, Decision.HUMAN_REVIEW, "human approval is incomplete or not bound to this action")
-            if request.protected_dissent_id:
+            if legacy_hint:
                 if request.protected_dissent_node != "A7":
                     return self._reject(request, Decision.BLOCKED, "protected dissent source must be council node A7")
                 if approval.dissent_override_id != request.protected_dissent_id or not approval.justification.strip():
