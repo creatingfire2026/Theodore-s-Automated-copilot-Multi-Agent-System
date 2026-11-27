@@ -331,12 +331,15 @@ class DissentStore:
         rows = self._rows(conn)
         prev = GENESIS_HASH
         dissents: dict[str, dict] = {}
+        cleared_hashes: set[str] = set()
         for expected_seq, row in enumerate(rows, start=1):
             if row["seq"] != expected_seq:
                 raise DissentStoreError(f"chain gap at seq {expected_seq} (row deleted or reordered)")
             if row["prev_hash"] != prev or compute_row_hash(row, prev) != row["row_hash"]:
                 raise DissentStoreError(f"hash chain broken at seq {row['seq']}")
             if row["kind"] == "dissent":
+                if row["dissent_id"] in dissents:
+                    raise DissentStoreError(f"duplicate dissent ID at seq {row['seq']}")
                 if not may_file_protected_dissent(row["author"]):
                     raise DissentStoreError(f"dissent seq {row['seq']} not authored by A7")
                 payload = dissent_payload(row["dissent_id"], row["target"], row["reason"], row["author"], row["ts"])
@@ -347,6 +350,9 @@ class DissentStore:
                 target = dissents.get(row["dissent_id"])
                 if target is None or target["row_hash"] != row["dissent_row_hash"]:
                     raise DissentStoreError(f"receipt seq {row['seq']} references no earlier dissent")
+                if row["dissent_row_hash"] in cleared_hashes:
+                    raise DissentStoreError(f"duplicate receipt for dissent row at seq {row['seq']}")
+                cleared_hashes.add(row["dissent_row_hash"])
                 payload = receipt_payload(row["dissent_id"], row["dissent_row_hash"], row["target"],
                                           row["reason"], row["author"], row["ts"])
                 if not _verify(keys["human"], row["signature"], payload):
@@ -380,10 +386,15 @@ class DissentStore:
                 " dissent_row_hash, signature, prev_hash, row_hash) VALUES"
                 " (:seq, :kind, :dissent_id, :target, :reason, :author, :ts, :dissent_row_hash,"
                 " :signature, :prev_hash, :row_hash)", row)
-            conn.execute("COMMIT")
-            # Anchor written while the db write lock is released but before returning;
-            # a crash here leaves the anchor one step behind, which still verifies (store extends it).
+            # Advance the signed anchor while BEGIN IMMEDIATE still holds the SQLite
+            # writer lock. A second writer cannot commit a later row and then have
+            # this writer overwrite its newer anchor with a stale one.
+            #
+            # Crash safety is fail-closed: a crash after the anchor write but before
+            # COMMIT leaves the anchor ahead of the database, so readers reject the
+            # store and require operator recovery rather than authorizing stale state.
             self._write_anchor(row["seq"], row["row_hash"], anchor_signer)
+            conn.execute("COMMIT")
             return row["row_hash"]
         except sqlite3.IntegrityError as exc:
             if conn.in_transaction:
@@ -447,8 +458,9 @@ class DissentStore:
     def open_dissents(self) -> list[Dissent]:
         """Dissents with no valid later receipt. Raises DissentStoreError on any integrity problem."""
         rows = self._verified_rows()
-        cleared = {r["dissent_id"] for r in rows if r["kind"] == "receipt"}
-        return [self._as_dissent(r) for r in rows if r["kind"] == "dissent" and r["dissent_id"] not in cleared]
+        cleared = {r["dissent_row_hash"] for r in rows if r["kind"] == "receipt"}
+        return [self._as_dissent(r) for r in rows
+                if r["kind"] == "dissent" and r["row_hash"] not in cleared]
 
     def known_dissent_ids(self) -> set[str]:
         return {r["dissent_id"] for r in self._verified_rows() if r["kind"] == "dissent"}
