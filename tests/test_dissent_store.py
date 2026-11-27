@@ -672,3 +672,56 @@ def test_wrong_openssl_key_rejected_by_real_magic_pubkey(tmp_path):
     with pytest.raises(DissentWriteRejected, match="does not verify"):
         store.append_receipt(dissent_id="D-REAL", author="theodore", reason="ok", ts=ts,
                              signature_b64=sig_b64, anchor_signer=("A7", a7))
+
+
+# --- integrity hardening follow-ups ---------------------------------------
+
+def test_duplicate_dissent_ids_are_rejected_even_if_unique_index_is_dropped(store, a7_key):
+    file(store, a7_key, "D-1", target="prod", reason="first")
+    second = {
+        "kind": "dissent", "dissent_id": "D-1", "target": "billing",
+        "reason": "second", "author": "A7", "ts": "2026-11-27T00:00:00Z",
+        "dissent_row_hash": "",
+        "signature": sign_b64(a7_key, dissent_payload(
+            "D-1", "billing", "second", "A7", "2026-11-27T00:00:00Z")),
+    }
+    rows = rows_of(store) + [second]
+    with raw(store) as c:
+        c.execute("DROP INDEX dissent_log_one_dissent_per_id")
+    rewrite_chain(store, rows)
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "duplicate dissent ID" in result.reason
+
+
+def test_anchor_update_happens_while_sqlite_writer_lock_is_held(store, a7_key, monkeypatch):
+    original = store._write_anchor
+
+    def assert_writer_lock_then_write(count, head, signer):
+        probe = sqlite3.connect(store.path, timeout=0)
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                probe.execute("BEGIN IMMEDIATE")
+        finally:
+            probe.close()
+        original(count, head, signer)
+
+    monkeypatch.setattr(store, "_write_anchor", assert_writer_lock_then_write)
+    file(store, a7_key, "D-LOCK")
+    assert store.head()[0] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="requires an independent monotonic witness; local db+anchor rollback is not detectable")
+def test_restoring_database_and_matching_old_anchor_is_rejected(store, a7_key, tmp_path):
+    import shutil
+
+    old_db = tmp_path / "old.db"
+    old_anchor = tmp_path / "old-anchor.json"
+    shutil.copy2(store.path, old_db)
+    shutil.copy2(store.anchor_path, old_anchor)
+    file(store, a7_key, "D-ROLLBACK")
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+    shutil.copy2(old_db, store.path)
+    shutil.copy2(old_anchor, store.anchor_path)
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
