@@ -132,6 +132,54 @@ export class DissentWitness {
         return json(await signCheckpoint(checkpoint, this.env));
       }
 
+      if (request.method === "POST" && url.pathname === "/bootstrap") {
+        const body = await request.json();
+        const rows = body && body.rows;
+        const payload = body && body.payload;
+        const signature = body && body.signature;
+        const checkpoint = await this.state.storage.transaction(async (txn) => {
+          const current = (await txn.get("checkpoint")) || genesis();
+          if (await txn.get("bootstrapped") || current.seq !== 0 || current.head_hash !== GENESIS_HASH ||
+              await txn.get("row:1")) {
+            throw new Error("witness is already initialized; bootstrap is one-time only");
+          }
+          if (!Array.isArray(rows) || rows.length > 5000 || !payload ||
+              !Number.isSafeInteger(payload.seq) || payload.seq !== rows.length ||
+              typeof payload.head_hash !== "string" || typeof payload.human !== "string" ||
+              !payload.human || typeof payload.reason !== "string" || !payload.reason.trim() ||
+              typeof payload.ts !== "string" || payload.kind !== "witness-bootstrap") {
+            throw new Error("malformed bootstrap request");
+          }
+          const expectedKeys = ["head_hash", "human", "kind", "reason", "seq", "ts"];
+          if (Object.keys(payload).sort().join(",") !== expectedKeys.join(",")) {
+            throw new Error("unexpected bootstrap payload fields");
+          }
+          if (!await verifyEd25519(this.env.HUMAN_PUBLIC_KEY_RAW_B64, signature, payload)) {
+            throw new Error("human bootstrap signature invalid");
+          }
+
+          let verified = genesis();
+          for (const row of rows) {
+            await validateRow(row, verified, txn, this.env);
+            await txn.put("row:" + row.seq, row);
+            verified = {
+              seq: row.seq,
+              head_hash: row.row_hash,
+              prev_hash: row.prev_hash,
+              witness_id: WITNESS_ID,
+              ts: payload.ts,
+            };
+          }
+          if (verified.seq !== payload.seq || verified.head_hash !== payload.head_hash) {
+            throw new Error("bootstrap rows do not match the human-signed head");
+          }
+          await txn.put("checkpoint", verified);
+          await txn.put("bootstrapped", true);
+          return verified;
+        });
+        return json(await signCheckpoint(checkpoint, this.env));
+      }
+
       if (request.method === "POST" && url.pathname === "/advance") {
         const body = await request.json();
         const row = body && body.row;
@@ -172,7 +220,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (!["GET", "POST"].includes(request.method)) return json({ ok: false, error: "method not allowed" }, 405);
-    if (!["/v1/checkpoint", "/v1/advance"].includes(url.pathname)) return json({ ok: false, error: "not found" }, 404);
+    if (!["/v1/checkpoint", "/v1/advance", "/v1/bootstrap"].includes(url.pathname)) return json({ ok: false, error: "not found" }, 404);
     const id = env.DISSENT_WITNESS.idFromName(WITNESS_ID);
     const stub = env.DISSENT_WITNESS.get(id);
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
