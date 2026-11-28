@@ -29,6 +29,17 @@ function encodeB64(value) {
   return btoa(raw);
 }
 
+function constantTimeEqual(left, right) {
+  const a = encoder.encode(left || "");
+  const b = encoder.encode(right || "");
+  let difference = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    difference |= (a[index] || 0) ^ (b[index] || 0);
+  }
+  return difference === 0;
+}
+
 async function sha256Hex(bytes) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -221,6 +232,13 @@ export default {
     const url = new URL(request.url);
     if (!["GET", "POST"].includes(request.method)) return json({ ok: false, error: "method not allowed" }, 405);
     if (!["/v1/checkpoint", "/v1/advance", "/v1/bootstrap"].includes(url.pathname)) return json({ ok: false, error: "not found" }, 404);
+    if (request.method === "POST") {
+      const expected = env.WITNESS_ADVANCE_TOKEN ? "Bearer " + env.WITNESS_ADVANCE_TOKEN : "";
+      const provided = request.headers.get("authorization") || "";
+      if (!expected || !constantTimeEqual(provided, expected)) {
+        return json({ ok: false, error: "unauthorized witness writer" }, 401);
+      }
+    }
     const id = env.DISSENT_WITNESS.idFromName(WITNESS_ID);
     const stub = env.DISSENT_WITNESS.get(id);
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
