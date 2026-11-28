@@ -159,16 +159,22 @@ SENTINEL_REQUIRE_DISSENT_WITNESS=1
 
 **Cloudflare setup:**
 
-1. Generate a dedicated Ed25519 witness keypair. Keep the PKCS#8 private key in a
-   local file with mode `0600`; install only its public PEM on the Sentinel host.
-2. Set Worker secrets `WITNESS_PRIVATE_KEY_PKCS8_B64`,
-   `A7_PUBLIC_KEY_RAW_B64`, and `HUMAN_PUBLIC_KEY_RAW_B64`. The latter two values
-   are the raw-base64 public keys printed by `dissent_cli.py pubkey-info --role a7`
-   and `dissent_cli.py pubkey-info --role human`.
-3. Deploy the Worker from this repository with `npx wrangler deploy`. The Durable
-   Object migration is declared in `wrangler.toml`.
-4. Configure the three Sentinel environment variables above and verify the remote
-   genesis checkpoint before enabling `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
+1. Generate the dedicated witness keypair:
+   `python dissent_witness_keygen.py --private-out /secure/witness-private.pkcs8.b64 --public-out /secure/witness-public.pem`.
+   The private file is mode `0600`; keep it off the Sentinel host and away from A7.
+2. From the repository root, upload the private key only to Cloudflare and configure
+   the two row-verification public keys:
+   ```sh
+   npx wrangler secret put WITNESS_PRIVATE_KEY_PKCS8_B64 < /secure/witness-private.pkcs8.b64
+   python dissent_cli.py pubkey-info --role a7 | sed -n 's/^raw_b64=//p' | npx wrangler secret put A7_PUBLIC_KEY_RAW_B64
+   python dissent_cli.py pubkey-info --role human | sed -n 's/^raw_b64=//p' | npx wrangler secret put HUMAN_PUBLIC_KEY_RAW_B64
+   ```
+3. Deploy with `npx wrangler deploy`. The Durable Object migration is declared
+   in `wrangler.toml`; record the Worker URL printed by Wrangler.
+4. Install `/secure/witness-public.pem` on the Sentinel host and set
+   `SENTINEL_DISSENT_WITNESS_URL` to the deployed Worker URL and
+   `SENTINEL_DISSENT_WITNESS_PUBKEY` to that PEM path. Verify a signed genesis
+   checkpoint before enabling `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
 
 The witness key is not installed on Sentinel or A7. The Worker verifies existing
 A7/human row signatures; it does not grant A7 the ability to sign witness checkpoints.
