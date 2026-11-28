@@ -92,3 +92,13 @@ class HttpDissentWitness:
         if checkpoint["seq"] != row.get("seq") or checkpoint["head_hash"] != row.get("row_hash"):
             raise DissentWitnessError("witness acknowledged a different checkpoint")
         return checkpoint
+
+    def bootstrap(self, rows: list[dict], payload: dict, signature_b64: str) -> dict:
+        response = self._request(
+            "POST", "/v1/bootstrap",
+            {"rows": rows, "payload": payload, "signature": signature_b64},
+        )
+        checkpoint = self._verified_checkpoint(response)
+        if checkpoint["seq"] != payload.get("seq") or checkpoint["head_hash"] != payload.get("head_hash"):
+            raise DissentWitnessError("witness bootstrap acknowledged a different local head")
+        return checkpoint
