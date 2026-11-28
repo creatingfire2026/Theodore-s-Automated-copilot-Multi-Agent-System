@@ -74,6 +74,9 @@ async function validateRow(row, current, txn, env) {
   if (!/^[0-9a-f]{64}$/.test(row.prev_hash) || !/^[0-9a-f]{64}$/.test(row.row_hash)) {
     throw new Error("malformed row hash");
   }
+  if (!row.dissent_id || !row.target || !row.reason.trim() || !row.author || !row.ts || !row.signature) {
+    throw new Error("required row values are empty");
+  }
   const rowPayload = Object.fromEntries(ROW_FIELDS.map((key) => [key, row[key]]));
   const material = new Uint8Array([
     ...encoder.encode(canonical(rowPayload)),
@@ -91,10 +94,12 @@ async function validateRow(row, current, txn, env) {
     if (!await verifyEd25519(env.A7_PUBLIC_KEY_RAW_B64, row.signature, payload)) {
       throw new Error("A7 dissent signature invalid");
     }
-    await txn.put("dissent:" + row.dissent_id, row.row_hash);
+    await txn.put("dissent:" + row.dissent_id, { row_hash: row.row_hash, target: row.target });
   } else if (row.kind === "receipt") {
-    const dissentHash = await txn.get("dissent:" + row.dissent_id);
-    if (!dissentHash || dissentHash !== row.dissent_row_hash) throw new Error("receipt does not reference a witnessed dissent");
+    const dissent = await txn.get("dissent:" + row.dissent_id);
+    if (!dissent || dissent.row_hash !== row.dissent_row_hash || dissent.target !== row.target) {
+      throw new Error("receipt does not reference the exact witnessed dissent");
+    }
     if (await txn.get("cleared:" + row.dissent_row_hash)) throw new Error("duplicate human receipt");
     const payload = {
       kind: "receipt", dissent_id: row.dissent_id, dissent_row_hash: row.dissent_row_hash,
