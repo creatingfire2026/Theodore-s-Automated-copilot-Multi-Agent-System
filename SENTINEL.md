@@ -183,7 +183,22 @@ the Cloudflare account, Worker code, and Worker secret remain outside the attack
 control. Compromise or authorized rollback of that provider control plane is outside
 this threat model.
 
-**Migration boundary:** this first implementation starts from the genesis checkpoint.
-Do not enable required-witness mode against an existing non-empty store until its
-current verified head has been securely bootstrapped into the Durable Object. A
-human-authorized bootstrap path and live Cloudflare deployment are not yet verified.
+**Existing-store bootstrap:** the Worker starts at genesis. For an existing store,
+first deploy the Worker and configure the witness URL/public key without enabling
+required-witness mode. Then:
+
+1. On the Sentinel host, generate a payload bound to the locally verified row count
+   and head:
+   `PAYLOAD_B64="$(python dissent_cli.py witness-bootstrap-payload --human theodore --reason 'enroll verified Sentinel dissent history')"`.
+2. Transfer only that payload to the human-controlled device. Sign it with the offline
+   human key using `printf '%s\\n' "$PAYLOAD_B64" | ./magic_sign_receipt.sh`.
+3. Return the signature to the Sentinel host and run:
+   `python dissent_cli.py witness-bootstrap --payload-b64 "$PAYLOAD_B64" --sig-b64 "$SIG_B64"`.
+4. The Worker accepts bootstrap once only, verifies the human signature and every
+   row's sequence, hash, A7/human signature, duplicate-ID rule, and receipt linkage,
+   then signs the resulting checkpoint. Verify `python dissent_cli.py status` before
+   setting `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
+
+The bootstrap endpoint accepts at most 5,000 rows. This code path is covered by local
+regression tests, but live Cloudflare bootstrap and Ed25519 runtime behavior remain
+unverified until deployed and exercised against the actual Durable Object.
