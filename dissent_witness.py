@@ -21,10 +21,13 @@ class DissentWitnessError(Exception):
 
 
 class HttpDissentWitness:
-    def __init__(self, base_url: str, public_key_path: str | Path, *, timeout: float = 3.0) -> None:
+    def __init__(self, base_url: str, public_key_path: str | Path, token: str, *, timeout: float = 3.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.public_key_path = Path(public_key_path).expanduser()
+        self.token = token
         self.timeout = timeout
+        if not self.token:
+            raise DissentWitnessError("witness advancement credential is missing")
         try:
             key = load_pem_public_key(self.public_key_path.read_bytes())
         except Exception as exc:  # noqa: BLE001
@@ -37,9 +40,12 @@ class HttpDissentWitness:
         data = None if body is None else json.dumps(
             body, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+            headers["Authorization"] = "Bearer " + self.token
         request = urllib.request.Request(
-            self.base_url + path, data=data, method=method,
-            headers={"Accept": "application/json", **({"Content-Type": "application/json"} if data is not None else {})},
+            self.base_url + path, data=data, method=method, headers=headers,
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
