@@ -345,8 +345,9 @@ class DissentStore:
         except sqlite3.Error as exc:
             raise DissentStoreError(f"dissent store unreadable: {exc}") from None
 
-    def _read_verified(self, conn: sqlite3.Connection, keys: dict | None = None) -> list[dict]:
-        """All rows after verifying triggers, chain, every signature, and the head anchor."""
+    def _read_verified(self, conn: sqlite3.Connection, keys: dict | None = None,
+                       *, check_witness: bool = True) -> list[dict]:
+        """Verify triggers, chain, signatures, local anchor, and optionally the remote witness."""
         keys = keys or self._keys()
         rows = self._rows(conn)
         prev = GENESIS_HASH
@@ -387,8 +388,37 @@ class DissentStore:
         if actual != anchored_head:
             raise DissentStoreError(f"store diverges from signed head anchor at row {anchored_count} (rewritten)")
         latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
-        self._check_witness(len(rows), latest_head)
+        if check_witness:
+            self._check_witness(len(rows), latest_head)
         return rows
+
+    def sync_witness(self) -> tuple[int, str]:
+        """Explicitly replay a locally valid suffix when a prior append committed but its witness call failed.
+
+        This cannot repair rollback: the remote checkpoint must be an exact ancestor
+        of the local verified chain. A remote-ahead or divergent state is rejected.
+        """
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        checkpoint = self.witness.checkpoint()
+        remote_seq = checkpoint["seq"]
+        if remote_seq > len(rows):
+            raise DissentStoreError("witness is ahead of the local store; rollback or data loss suspected")
+        local_prefix = rows[remote_seq - 1]["row_hash"] if remote_seq else GENESIS_HASH
+        if checkpoint["head_hash"] != local_prefix:
+            raise DissentStoreError("local chain diverges from the independent witness; refusing reconciliation")
+        for row in rows[remote_seq:]:
+            self.witness.advance(row)
+        latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        self._check_witness(len(rows), latest_head)
+        return len(rows), latest_head
 
     def _check_witness(self, seq: int, head_hash: str) -> None:
         if self._witness_config_error:
