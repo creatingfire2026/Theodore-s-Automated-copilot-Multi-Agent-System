@@ -735,6 +735,9 @@ class FakeMonotonicWitness:
         self.head_hash = GENESIS_HASH
         self.fail_next = False
 
+    def checkpoint(self):
+        return {"seq": self.seq, "head_hash": self.head_hash}
+
     def assert_matches(self, seq, head_hash):
         if (seq, head_hash) != (self.seq, self.head_hash):
             raise DissentStoreError("local state differs from independent witness")
