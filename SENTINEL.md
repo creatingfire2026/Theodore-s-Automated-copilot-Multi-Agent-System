@@ -191,7 +191,7 @@ required-witness mode. Then:
    and head:
    `PAYLOAD_B64="$(python dissent_cli.py witness-bootstrap-payload --human theodore --reason 'enroll verified Sentinel dissent history')"`.
 2. Transfer only that payload to the human-controlled device. Sign it with the offline
-   human key using `printf '%s\\n' "$PAYLOAD_B64" | ./magic_sign_receipt.sh`.
+   human key using `SIG_B64="$(printf '%s\\n' "$PAYLOAD_B64" | ./magic_sign_receipt.sh)"`.
 3. Return the signature to the Sentinel host and run:
    `python dissent_cli.py witness-bootstrap --payload-b64 "$PAYLOAD_B64" --sig-b64 "$SIG_B64"`.
 4. The Worker accepts bootstrap once only, verifies the human signature and every
