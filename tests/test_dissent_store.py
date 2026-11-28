@@ -733,12 +733,16 @@ class FakeMonotonicWitness:
     def __init__(self):
         self.seq = 0
         self.head_hash = GENESIS_HASH
+        self.fail_next = False
 
     def assert_matches(self, seq, head_hash):
         if (seq, head_hash) != (self.seq, self.head_hash):
             raise DissentStoreError("local state differs from independent witness")
 
     def advance(self, row):
+        if self.fail_next:
+            self.fail_next = False
+            raise DissentStoreError("simulated witness transport failure")
         if row["seq"] == self.seq and row["row_hash"] == self.head_hash:
             return {"seq": self.seq, "head_hash": self.head_hash}
         if row["seq"] != self.seq + 1 or row["prev_hash"] != self.head_hash:
@@ -780,3 +784,25 @@ def test_required_witness_missing_fails_closed(store):
     result = decide(required)
     assert result.decision is Decision.HUMAN_REVIEW
     assert "witness" in result.reason.lower()
+
+
+def test_explicit_witness_sync_recovers_interrupted_append(store, a7_key):
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    witness.fail_next = True
+    with pytest.raises(DissentStoreError, match="witness advancement failed"):
+        file_protected_dissent(
+            witnessed, a7_key, dissent_id="D-RETRY", target="prod", reason="interrupted witness call"
+        )
+
+    # The local transaction committed, but the remote witness did not. Authorization
+    # remains HUMAN_REVIEW until the explicit operator reconciliation succeeds.
+    assert witness.seq == 0
+    assert decide(witnessed).decision is Decision.HUMAN_REVIEW
+    count, head = witnessed.sync_witness()
+    assert count == 1
+    assert head == witness.head_hash
+    assert witnessed.head() == (1, head)
