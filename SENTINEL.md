@@ -154,7 +154,7 @@ witness closes that local rollback gap within the stated threat model:
 ```sh
 SENTINEL_DISSENT_WITNESS_URL=https://<worker>.<account>.workers.dev
 SENTINEL_DISSENT_WITNESS_PUBKEY=/secure/path/witness-public.pem
-SENTINEL_DISSENT_WITNESS_TOKEN_FILE=/secure/path/witness-advance-token
+SENTINEL_DISSENT_WITNESS_TOKEN=<value loaded from the 0600 secret file>
 SENTINEL_REQUIRE_DISSENT_WITNESS=1
 ```
 
