@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import dissent_cli
 from aip001_council import file_protected_dissent
 from dissent_store import (
-    DissentStore, DissentStoreError, DissentWriteRejected, clear_dissent, compute_row_hash,
+    DissentStore, DissentStoreError, DissentWriteRejected, GENESIS_HASH, clear_dissent, compute_row_hash,
     dissent_payload, load_private_key, receipt_payload, sign_b64,
 )
 from sentinel import ActionRequest, Decision, HumanApproval, Sentinel
@@ -725,3 +725,58 @@ def test_restoring_database_and_matching_old_anchor_is_rejected(store, a7_key, t
     shutil.copy2(old_anchor, store.anchor_path)
     result = decide(store)
     assert result.decision is Decision.HUMAN_REVIEW
+
+
+# --- independent monotonic witness ----------------------------------------
+
+class FakeMonotonicWitness:
+    def __init__(self):
+        self.seq = 0
+        self.head_hash = GENESIS_HASH
+
+    def assert_matches(self, seq, head_hash):
+        if (seq, head_hash) != (self.seq, self.head_hash):
+            raise DissentStoreError("local state differs from independent witness")
+
+    def advance(self, row):
+        if row["seq"] == self.seq and row["row_hash"] == self.head_hash:
+            return {"seq": self.seq, "head_hash": self.head_hash}
+        if row["seq"] != self.seq + 1 or row["prev_hash"] != self.head_hash:
+            raise DissentStoreError("stale or forked advancement")
+        self.seq = row["seq"]
+        self.head_hash = row["row_hash"]
+        return {"seq": self.seq, "head_hash": self.head_hash}
+
+
+def test_independent_witness_detects_paired_database_and_anchor_rollback(store, a7_key):
+    import shutil
+
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    old_db = store.path.parent / "before-witness.db"
+    old_anchor = store.anchor_path.parent / "before-witness-anchor.json"
+    shutil.copy2(store.path, old_db)
+    shutil.copy2(store.anchor_path, old_anchor)
+
+    file_protected_dissent(witnessed, a7_key, dissent_id="D-WITNESS", target="prod", reason="rollback test")
+    assert witness.seq == 1
+    assert decide(witnessed).decision is Decision.HUMAN_REVIEW
+
+    shutil.copy2(old_db, store.path)
+    shutil.copy2(old_anchor, store.anchor_path)
+    result = decide(witnessed)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "witness" in result.reason.lower()
+
+
+def test_required_witness_missing_fails_closed(store):
+    required = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        require_witness=True,
+    )
+    result = decide(required)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "witness" in result.reason.lower()
