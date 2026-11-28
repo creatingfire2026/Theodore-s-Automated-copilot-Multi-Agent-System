@@ -124,3 +124,60 @@ Operate the store with `python dissent_cli.py --help`. For an offline human key
 receipt with `python dissent_cli.py clear --payload-b64 ... --sig-b64 ...`
 (the box's A7 key re-signs the head anchor, while only the human key can sign
 the receipt itself).
+
+
+### Independent monotonic dissent witness
+
+The local signed anchor detects truncation and rewriting, but cannot detect restoration
+of an older database together with its matching older anchor. The optional independent
+witness closes that local rollback gap within the stated threat model:
+
+- `cloudflare/dissent-witness/worker.mjs` stores the highest accepted sequence and
+  hash in a Cloudflare Durable Object. It accepts only the next sequence whose
+  previous hash matches the stored head.
+- The Worker verifies each A7-signed dissent or human-signed receipt before advancing.
+  Duplicate dissent IDs, duplicate receipts, stale sequence numbers, and forked
+  previous hashes are rejected.
+- The Worker signs every checkpoint with a dedicated Ed25519 key held only as a
+  Cloudflare Worker secret. A7's signing key cannot forge or roll back that witness
+  checkpoint.
+- `dissent_witness.py` verifies the checkpoint signature. When configured, every
+  local dissent-store read compares the complete local head with the remote
+  checkpoint. Missing, unavailable, invalid, behind, ahead, or divergent witness
+  state produces `HUMAN_REVIEW`.
+- `python dissent_cli.py witness-sync` is an explicit recovery operation for an
+  interrupted append: it only replays a locally verified suffix when the remote
+  checkpoint is an exact ancestor. It refuses remote-ahead or divergent state.
+
+**Sentinel configuration:**
+
+```sh
+SENTINEL_DISSENT_WITNESS_URL=https://<worker>.<account>.workers.dev
+SENTINEL_DISSENT_WITNESS_PUBKEY=/secure/path/witness-public.pem
+SENTINEL_REQUIRE_DISSENT_WITNESS=1
+```
+
+**Cloudflare setup:**
+
+1. Generate a dedicated Ed25519 witness keypair. Keep the PKCS#8 private key in a
+   local file with mode `0600`; install only its public PEM on the Sentinel host.
+2. Set Worker secrets `WITNESS_PRIVATE_KEY_PKCS8_B64`,
+   `A7_PUBLIC_KEY_RAW_B64`, and `HUMAN_PUBLIC_KEY_RAW_B64`. The latter two values
+   are the raw-base64 public keys printed by `dissent_cli.py pubkey-info --role a7`
+   and `dissent_cli.py pubkey-info --role human`.
+3. Deploy the Worker from this repository with `npx wrangler deploy`. The Durable
+   Object migration is declared in `wrangler.toml`.
+4. Configure the three Sentinel environment variables above and verify the remote
+   genesis checkpoint before enabling `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
+
+The witness key is not installed on Sentinel or A7. The Worker verifies existing
+A7/human row signatures; it does not grant A7 the ability to sign witness checkpoints.
+The Durable Object and Worker deployment are an independent trust boundary only while
+the Cloudflare account, Worker code, and Worker secret remain outside the attacker's
+control. Compromise or authorized rollback of that provider control plane is outside
+this threat model.
+
+**Migration boundary:** this first implementation starts from the genesis checkpoint.
+Do not enable required-witness mode against an existing non-empty store until its
+current verified head has been securely bootstrapped into the Durable Object. A
+human-authorized bootstrap path and live Cloudflare deployment are not yet verified.
