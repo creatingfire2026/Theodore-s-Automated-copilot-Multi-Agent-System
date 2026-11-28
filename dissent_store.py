@@ -33,12 +33,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from aip001_council import may_file_protected_dissent
+from dissent_witness import HttpDissentWitness
 
 GENESIS_HASH = "0" * 64
 ENV_DB = "SENTINEL_DISSENT_DB"
 ENV_PUBKEY = "SENTINEL_HUMAN_PUBKEY"
 ENV_A7_PUBKEY = "SENTINEL_A7_PUBKEY"
 ENV_ANCHOR = "SENTINEL_DISSENT_ANCHOR"
+ENV_WITNESS_URL = "SENTINEL_DISSENT_WITNESS_URL"
+ENV_WITNESS_PUBKEY = "SENTINEL_DISSENT_WITNESS_PUBKEY"
+ENV_REQUIRE_WITNESS = "SENTINEL_REQUIRE_DISSENT_WITNESS"
 ANCHOR_SIGNERS = ("A7", "human")
 REQUIRED_TRIGGERS = frozenset({"dissent_log_no_update", "dissent_log_no_delete"})
 ROW_FIELDS = ("seq", "kind", "dissent_id", "target", "reason", "author", "ts", "dissent_row_hash", "signature")
@@ -225,11 +229,27 @@ def _write_private_file(path: Path, data: bytes) -> None:
 
 
 class DissentStore:
-    def __init__(self, path, human_pubkey_path, a7_pubkey_path=None, anchor_path=None) -> None:
+    def __init__(self, path, human_pubkey_path, a7_pubkey_path=None, anchor_path=None,
+                 *, witness=None, require_witness: bool | None = None) -> None:
         self.path = Path(path)
         self.human_pubkey_path = Path(human_pubkey_path) if human_pubkey_path else None
         self.a7_pubkey_path = Path(a7_pubkey_path) if a7_pubkey_path else None
         self.anchor_path = Path(anchor_path) if anchor_path else None
+        self._witness_config_error = None
+        if witness is None:
+            witness_url = os.environ.get(ENV_WITNESS_URL)
+            witness_pubkey = os.environ.get(ENV_WITNESS_PUBKEY)
+            if bool(witness_url) != bool(witness_pubkey):
+                self._witness_config_error = f"{ENV_WITNESS_URL} and {ENV_WITNESS_PUBKEY} must be configured together"
+            elif witness_url and witness_pubkey:
+                try:
+                    witness = HttpDissentWitness(witness_url, witness_pubkey)
+                except Exception as exc:  # noqa: BLE001 - witness configuration must fail closed
+                    self._witness_config_error = f"witness configuration invalid: {exc.__class__.__name__}"
+        self.witness = witness
+        if require_witness is None:
+            require_witness = os.environ.get(ENV_REQUIRE_WITNESS, "") == "1"
+        self.require_witness = bool(require_witness)
 
     @classmethod
     def from_env(cls) -> "DissentStore | None":
@@ -366,7 +386,37 @@ class DissentStore:
         actual = rows[anchored_count - 1]["row_hash"] if anchored_count else GENESIS_HASH
         if actual != anchored_head:
             raise DissentStoreError(f"store diverges from signed head anchor at row {anchored_count} (rewritten)")
+        latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        self._check_witness(len(rows), latest_head)
         return rows
+
+    def _check_witness(self, seq: int, head_hash: str) -> None:
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            if self.require_witness:
+                raise DissentStoreError("independent dissent witness required but not configured")
+            return
+        try:
+            self.witness.assert_matches(seq, head_hash)
+        except DissentStoreError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - unavailable or malformed witness must fail closed
+            raise DissentStoreError(f"independent dissent witness failed: {exc.__class__.__name__}") from None
+
+    def _advance_witness(self, row: dict) -> None:
+        self._check_witness(row["seq"] - 1, row["prev_hash"])
+        if self.witness is None:
+            return
+        try:
+            self.witness.advance(row)
+            self._check_witness(row["seq"], row["row_hash"])
+        except DissentStoreError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - never report an unwitnessed append as complete
+            raise DissentStoreError(
+                f"local dissent append committed but witness advancement failed: {exc.__class__.__name__}"
+            ) from None
 
     def _append(self, row: dict, anchor_signer) -> str:
         keys = self._keys()
@@ -395,6 +445,10 @@ class DissentStore:
             # store and require operator recovery rather than authorizing stale state.
             self._write_anchor(row["seq"], row["row_hash"], anchor_signer)
             conn.execute("COMMIT")
+            # The remote monotonic witness is advanced only after the local row and
+            # signed anchor commit. If this call fails, the local store is ahead and
+            # every subsequent authorization fails closed until operator recovery.
+            self._advance_witness(row)
             return row["row_hash"]
         except sqlite3.IntegrityError as exc:
             if conn.in_transaction:
