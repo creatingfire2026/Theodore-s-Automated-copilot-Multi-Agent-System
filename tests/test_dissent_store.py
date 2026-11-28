@@ -860,3 +860,12 @@ def test_existing_chain_bootstrap_rejects_invalid_human_signature(store, a7_key,
             signature_b64=sign_b64(wrong_key, payload),
         )
     assert witness.seq == 0
+
+
+def test_required_witness_also_requires_the_dissent_store(monkeypatch):
+    monkeypatch.setenv("SENTINEL_REQUIRE_DISSENT_WITNESS", "1")
+    monkeypatch.delenv("SENTINEL_REQUIRE_DISSENT_STORE", raising=False)
+    monkeypatch.delenv("SENTINEL_DISSENT_DB", raising=False)
+    result = Sentinel().authorize(req())
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "dissent store required" in result.reason
