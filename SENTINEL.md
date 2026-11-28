@@ -128,6 +128,22 @@ receipt with `python dissent_cli.py clear --payload-b64 ... --sig-b64 ...`
 the receipt itself).
 
 
+### Ed25519 human-approval verifier (B3) and MCP gateway (B4)
+
+`approval_verifier.Ed25519ApprovalVerifier` is a concrete `human_approval_verifier` for
+`Sentinel`. The human signs canonical JSON (action id, trace id, human id, audience, tool,
+SHA-256 of canonical args, intent, scope, risk, nonce, expiry). It rejects bad or wrong-key
+signatures, expired or over-TTL approvals, replayed nonces (persisted, append-only SQLite),
+audience/tool/args/scope/intent/trace/risk mismatches, and any parse error; it never raises.
+`ActionRequest` gained optional `tool` / `args_sha256` and `HumanApproval` gained optional
+`payload_b64` (defaults keep existing callers working). `mcp_server.py` exposes
+`read_status`, `propose_action`, and `execute_action` (dry-run) over stdio; see README.
+
+Known limits: deleting the nonce database re-opens replay inside the approval TTL; the MCP
+audit log (`audit_log.py`) is hash-chained but not signed or witnessed; there is no OAuth
+token check on the MCP transport yet and no live executor.
+
+
 ### Independent monotonic dissent witness
 
 The local signed anchor detects truncation and rewriting, but cannot detect restoration

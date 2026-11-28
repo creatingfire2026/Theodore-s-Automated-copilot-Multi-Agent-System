@@ -44,6 +44,9 @@ class ActionRequest:
     test_result: TestResult | None = None
     protected_dissent_node: str | None = None
     protected_dissent_id: str | None = None
+    # B3: bind an approval to the exact downstream tool and SHA-256 of its canonical args.
+    tool: str = ""
+    args_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,8 @@ class HumanApproval:
     signature: str
     dissent_override_id: str | None = None
     justification: str = ""
+    # B3: canonical signed payload (base64); Ed25519ApprovalVerifier checks the signature over these bytes.
+    payload_b64: str = ""
 
 
 @dataclass
