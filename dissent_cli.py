@@ -146,9 +146,31 @@ def _add(args) -> int:
 def _status(args) -> int:
     store = _store(args)
     count, head = store.head()
-    print(f"chain, signatures and anchor OK: {count} rows, head={head}")
+    print(f"chain, signatures, local anchor and independent witness OK: {count} rows, head={head}")
     for d in store.open_dissents():
         print(f"OPEN {d.dissent_id} target={d.target!r} by {d.author} at {d.ts}: {d.reason}")
+    return 0
+
+
+def _witness_sync(args) -> int:
+    count, head = _store(args).sync_witness()
+    print(f"independent witness reconciled to verified local chain: {count} rows, head={head}")
+    return 0
+
+
+def _witness_bootstrap_payload(args) -> int:
+    payload = _store(args).create_witness_bootstrap_payload(
+        human=args.human, reason=args.reason, ts=args.ts or now_ts(),
+    )
+    print(base64.b64encode(payload).decode("ascii"))
+    return 0
+
+
+def _witness_bootstrap(args) -> int:
+    count, head = _store(args).bootstrap_witness(
+        payload_b64=args.payload_b64, signature_b64=args.sig_b64,
+    )
+    print(f"independent witness bootstrapped from human-signed local chain: {count} rows, head={head}")
     return 0
 
 
@@ -261,6 +283,9 @@ def main(argv=None) -> int:
     pi.add_argument("--role", choices=("human", "a7"), default="human")
     pi.set_defaults(fn=_pubkey_info)
     for name, fn in (("init", _init), ("add-dissent", _add), ("status", _status),
+                     ("witness-sync", _witness_sync),
+                     ("witness-bootstrap-payload", _witness_bootstrap_payload),
+                     ("witness-bootstrap", _witness_bootstrap),
                      ("receipt-payload", _receipt_payload), ("clear", _clear)):
         p = sub.add_parser(name)
         p.add_argument("--db")
@@ -275,6 +300,13 @@ def main(argv=None) -> int:
             p.add_argument("--target", required=True, help="trace_id, intent, scope entry, or '*'")
             p.add_argument("--reason", required=True)
             p.add_argument("--author", default="A7")
+        if name == "witness-bootstrap-payload":
+            p.add_argument("--human", required=True)
+            p.add_argument("--reason", required=True)
+            p.add_argument("--ts", help="override UTC timestamp (defaults to now)")
+        if name == "witness-bootstrap":
+            p.add_argument("--payload-b64", required=True)
+            p.add_argument("--sig-b64", required=True)
         if name == "receipt-payload":
             p.add_argument("dissent_id", nargs="?", help="dissent ID")
             p.add_argument("--id", dest="dissent_id_flag", help="dissent ID (alternative to positional)")

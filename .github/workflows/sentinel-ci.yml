@@ -25,7 +25,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Sentinel and tests
-        run: python -m compileall -q sentinel.py swarm_router.py aip001_council.py github_actions_evidence.py dissent_store.py dissent_cli.py tests
+        run: python -m compileall -q sentinel.py swarm_router.py aip001_council.py github_actions_evidence.py dissent_store.py dissent_cli.py dissent_witness.py dissent_witness_keygen.py tests
+      - name: Validate Cloudflare witness Worker syntax
+        run: node --check cloudflare/dissent-witness/worker.mjs
       - name: Install test runner
         run: python -m pip install --disable-pip-version-check pytest cryptography
       - name: Run regression suite

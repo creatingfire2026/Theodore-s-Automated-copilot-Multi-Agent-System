@@ -107,11 +107,13 @@ Sentinel no longer relies on the caller to report a protected A7 dissent. Every
   A7 or human signature, truncation, rewrite, missing/invalid anchor, or missing
   key configuration all yield `HUMAN_REVIEW`, never `AUTHORIZED`.
 
-**Production setting:** `SENTINEL_REQUIRE_DISSENT_STORE=1` (with
-`SENTINEL_DISSENT_DB`, `SENTINEL_DISSENT_ANCHOR`, `SENTINEL_HUMAN_PUBKEY`,
-`SENTINEL_A7_PUBKEY`, and for writers `SENTINEL_A7_KEY`). Without it and without a
-configured store, Sentinel keeps the legacy caller-hint behavior (kept only so
-library/unit use stays opt-in).
+**Production settings:** enable both `SENTINEL_REQUIRE_DISSENT_STORE=1` and
+`SENTINEL_REQUIRE_DISSENT_WITNESS=1`, with `SENTINEL_DISSENT_DB`,
+`SENTINEL_DISSENT_ANCHOR`, `SENTINEL_HUMAN_PUBKEY`, `SENTINEL_A7_PUBKEY`,
+`SENTINEL_DISSENT_WITNESS_URL`, `SENTINEL_DISSENT_WITNESS_PUBKEY`, and the
+Sentinel-only `SENTINEL_DISSENT_WITNESS_TOKEN`. Writers also need
+`SENTINEL_A7_KEY`. Setting witness-required automatically makes the dissent store
+required; there is no legacy fallback when the store or witness is missing.
 
 Known limits: restoring an older database together with its older anchor file
 (a consistent rollback) is not detected; whoever holds a private key can sign
@@ -124,3 +126,91 @@ Operate the store with `python dissent_cli.py --help`. For an offline human key
 receipt with `python dissent_cli.py clear --payload-b64 ... --sig-b64 ...`
 (the box's A7 key re-signs the head anchor, while only the human key can sign
 the receipt itself).
+
+
+### Independent monotonic dissent witness
+
+The local signed anchor detects truncation and rewriting, but cannot detect restoration
+of an older database together with its matching older anchor. The optional independent
+witness closes that local rollback gap within the stated threat model:
+
+- `cloudflare/dissent-witness/worker.mjs` stores the highest accepted sequence and
+  hash in a Cloudflare Durable Object. It accepts only the next sequence whose
+  previous hash matches the stored head.
+- The Worker verifies each A7-signed dissent or human-signed receipt before advancing.
+  Duplicate dissent IDs, duplicate receipts, stale sequence numbers, and forked
+  previous hashes are rejected.
+- The Worker signs every checkpoint with a dedicated Ed25519 key held only as a
+  Cloudflare Worker secret. A7's signing key cannot forge or roll back that witness
+  checkpoint.
+- `dissent_witness.py` verifies the checkpoint signature. When configured, every
+  local dissent-store read compares the complete local head with the remote
+  checkpoint. Missing, unavailable, invalid, behind, ahead, or divergent witness
+  state produces `HUMAN_REVIEW`.
+- `python dissent_cli.py witness-sync` is an explicit recovery operation for an
+  interrupted append: it only replays a locally verified suffix when the remote
+  checkpoint is an exact ancestor. It refuses remote-ahead or divergent state.
+
+**Sentinel configuration:**
+
+```sh
+SENTINEL_DISSENT_WITNESS_URL=https://<worker>.<account>.workers.dev
+SENTINEL_DISSENT_WITNESS_PUBKEY=/secure/path/witness-public.pem
+SENTINEL_DISSENT_WITNESS_TOKEN=<value loaded from the 0600 secret file>
+SENTINEL_REQUIRE_DISSENT_WITNESS=1
+```
+
+**Cloudflare setup:**
+
+1. Generate the dedicated witness keypair:
+   `python dissent_witness_keygen.py --private-out /secure/witness-private.pkcs8.b64 --public-out /secure/witness-public.pem`.
+   The private file is mode `0600`; keep it off the Sentinel host and away from A7.
+2. Create a separate writer credential. Store it in a 0600 file available only to
+   the Sentinel service account; do not expose it to A7:
+   ```sh
+   openssl rand -hex 32 > /secure/witness-advance-token
+   chmod 600 /secure/witness-advance-token
+   npx wrangler secret put WITNESS_ADVANCE_TOKEN < /secure/witness-advance-token
+   ```
+3. From the repository root, upload the witness private key only to Cloudflare and
+   configure the two row-verification public keys:
+   ```sh
+   npx wrangler secret put WITNESS_PRIVATE_KEY_PKCS8_B64 < /secure/witness-private.pkcs8.b64
+   python dissent_cli.py pubkey-info --role a7 | sed -n 's/^raw_b64=//p' | npx wrangler secret put A7_PUBLIC_KEY_RAW_B64
+   python dissent_cli.py pubkey-info --role human | sed -n 's/^raw_b64=//p' | npx wrangler secret put HUMAN_PUBLIC_KEY_RAW_B64
+   ```
+4. Deploy with `npx wrangler deploy`. The Durable Object migration is declared
+   in `wrangler.toml`; record the Worker URL printed by Wrangler.
+5. Install the witness public PEM and the writer-token file on the Sentinel host.
+   Set `SENTINEL_DISSENT_WITNESS_URL`, `SENTINEL_DISSENT_WITNESS_PUBKEY`,
+   `SENTINEL_DISSENT_WITNESS_TOKEN`, and finally
+   `SENTINEL_REQUIRE_DISSENT_WITNESS=1` only after the genesis/bootstrapped
+   checkpoint has been verified. The token authorizes POST advancement and must
+   remain unavailable to A7; the public checkpoint GET is signature-verified.
+
+The witness key is not installed on Sentinel or A7. The Worker verifies existing
+A7/human row signatures; it does not grant A7 the ability to sign witness checkpoints.
+The Durable Object and Worker deployment are an independent trust boundary only while
+the Cloudflare account, Worker code, and Worker secret remain outside the attacker's
+control. Compromise or authorized rollback of that provider control plane is outside
+this threat model.
+
+**Existing-store bootstrap:** the Worker starts at genesis. For an existing store,
+first deploy the Worker and configure the witness URL/public key without enabling
+required-witness mode. Then:
+
+1. On the Sentinel host, generate a payload bound to the locally verified row count
+   and head:
+   `PAYLOAD_B64="$(python dissent_cli.py witness-bootstrap-payload --human theodore --reason 'enroll verified Sentinel dissent history')"`.
+2. Transfer only that payload to the human-controlled device. Sign it with the offline
+   human key using `SIG_B64="$(printf '%s\\n' "$PAYLOAD_B64" | ./magic_sign_receipt.sh)"`.
+3. Return the signature to the Sentinel host and run:
+   `python dissent_cli.py witness-bootstrap --payload-b64 "$PAYLOAD_B64" --sig-b64 "$SIG_B64"`.
+4. The Worker accepts bootstrap once only, verifies the human signature and every
+   row's sequence, hash, A7/human signature, duplicate-ID rule, and receipt linkage,
+   then signs the resulting checkpoint. Verify `python dissent_cli.py status` before
+   setting `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
+
+The bootstrap endpoint accepts at most 5,000 rows. This code path is covered by local
+regression tests, but live Cloudflare bootstrap and Ed25519 runtime behavior remain
+unverified until deployed and exercised against the actual Durable Object.

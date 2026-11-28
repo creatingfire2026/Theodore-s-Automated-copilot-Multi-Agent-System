@@ -95,7 +95,10 @@ class Sentinel:
         # F34: Sentinel looks protected A7 dissents up itself instead of trusting the caller.
         self.dissent_store = dissent_store if dissent_store is not None else DissentStore.from_env()
         if require_dissent_store is None:
-            require_dissent_store = os.environ.get("SENTINEL_REQUIRE_DISSENT_STORE", "") == "1"
+            require_dissent_store = (
+                os.environ.get("SENTINEL_REQUIRE_DISSENT_STORE", "") == "1"
+                or os.environ.get("SENTINEL_REQUIRE_DISSENT_WITNESS", "") == "1"
+            )
         self.require_dissent_store = require_dissent_store
 
     def _check_dissent_store(self, request: ActionRequest) -> tuple[DecisionRecord | None, bool]:

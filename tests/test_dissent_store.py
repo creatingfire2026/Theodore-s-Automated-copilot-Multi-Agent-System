@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import dissent_cli
 from aip001_council import file_protected_dissent
 from dissent_store import (
-    DissentStore, DissentStoreError, DissentWriteRejected, clear_dissent, compute_row_hash,
+    DissentStore, DissentStoreError, DissentWriteRejected, GENESIS_HASH, clear_dissent, compute_row_hash,
     dissent_payload, load_private_key, receipt_payload, sign_b64,
 )
 from sentinel import ActionRequest, Decision, HumanApproval, Sentinel
@@ -672,3 +672,200 @@ def test_wrong_openssl_key_rejected_by_real_magic_pubkey(tmp_path):
     with pytest.raises(DissentWriteRejected, match="does not verify"):
         store.append_receipt(dissent_id="D-REAL", author="theodore", reason="ok", ts=ts,
                              signature_b64=sig_b64, anchor_signer=("A7", a7))
+
+
+# --- integrity hardening follow-ups ---------------------------------------
+
+def test_duplicate_dissent_ids_are_rejected_even_if_unique_index_is_dropped(store, a7_key):
+    file(store, a7_key, "D-1", target="prod", reason="first")
+    second = {
+        "kind": "dissent", "dissent_id": "D-1", "target": "billing",
+        "reason": "second", "author": "A7", "ts": "2026-11-27T00:00:00Z",
+        "dissent_row_hash": "",
+        "signature": sign_b64(a7_key, dissent_payload(
+            "D-1", "billing", "second", "A7", "2026-11-27T00:00:00Z")),
+    }
+    rows = rows_of(store) + [second]
+    with raw(store) as c:
+        c.execute("DROP INDEX dissent_log_one_dissent_per_id")
+    rewrite_chain(store, rows)
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "duplicate dissent ID" in result.reason
+
+
+def test_anchor_update_happens_while_sqlite_writer_lock_is_held(store, a7_key, monkeypatch):
+    original = store._write_anchor
+
+    def assert_writer_lock_then_write(count, head, signer):
+        probe = sqlite3.connect(store.path, timeout=0)
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                probe.execute("BEGIN IMMEDIATE")
+        finally:
+            probe.close()
+        original(count, head, signer)
+
+    monkeypatch.setattr(store, "_write_anchor", assert_writer_lock_then_write)
+    file(store, a7_key, "D-LOCK")
+    assert store.head()[0] == 1
+
+
+@pytest.mark.xfail(strict=True, reason="requires an independent monotonic witness; local db+anchor rollback is not detectable")
+def test_restoring_database_and_matching_old_anchor_is_rejected(store, a7_key, tmp_path):
+    import shutil
+
+    old_db = tmp_path / "old.db"
+    old_anchor = tmp_path / "old-anchor.json"
+    shutil.copy2(store.path, old_db)
+    shutil.copy2(store.anchor_path, old_anchor)
+    file(store, a7_key, "D-ROLLBACK")
+    assert decide(store).decision is Decision.HUMAN_REVIEW
+    shutil.copy2(old_db, store.path)
+    shutil.copy2(old_anchor, store.anchor_path)
+    result = decide(store)
+    assert result.decision is Decision.HUMAN_REVIEW
+
+
+# --- independent monotonic witness ----------------------------------------
+
+class FakeMonotonicWitness:
+    def __init__(self):
+        self.seq = 0
+        self.head_hash = GENESIS_HASH
+        self.fail_next = False
+
+    def checkpoint(self):
+        return {"seq": self.seq, "head_hash": self.head_hash}
+
+    def bootstrap(self, rows, payload, signature_b64):
+        if self.seq != 0 or self.head_hash != GENESIS_HASH:
+            raise DissentStoreError("witness already initialized")
+        self.seq = payload["seq"]
+        self.head_hash = payload["head_hash"]
+        return self.checkpoint()
+
+    def assert_matches(self, seq, head_hash):
+        if (seq, head_hash) != (self.seq, self.head_hash):
+            raise DissentStoreError("local state differs from independent witness")
+
+    def advance(self, row):
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("simulated witness transport failure")
+        if row["seq"] == self.seq and row["row_hash"] == self.head_hash:
+            return {"seq": self.seq, "head_hash": self.head_hash}
+        if row["seq"] != self.seq + 1 or row["prev_hash"] != self.head_hash:
+            raise DissentStoreError("stale or forked advancement")
+        self.seq = row["seq"]
+        self.head_hash = row["row_hash"]
+        return {"seq": self.seq, "head_hash": self.head_hash}
+
+
+def test_independent_witness_detects_paired_database_and_anchor_rollback(store, a7_key):
+    import shutil
+
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    old_db = store.path.parent / "before-witness.db"
+    old_anchor = store.anchor_path.parent / "before-witness-anchor.json"
+    shutil.copy2(store.path, old_db)
+    shutil.copy2(store.anchor_path, old_anchor)
+
+    file_protected_dissent(witnessed, a7_key, dissent_id="D-WITNESS", target="prod", reason="rollback test")
+    assert witness.seq == 1
+    assert decide(witnessed).decision is Decision.HUMAN_REVIEW
+
+    shutil.copy2(old_db, store.path)
+    shutil.copy2(old_anchor, store.anchor_path)
+    result = decide(witnessed)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "witness" in result.reason.lower()
+
+
+def test_required_witness_missing_fails_closed(store):
+    required = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        require_witness=True,
+    )
+    result = decide(required)
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "witness" in result.reason.lower()
+
+
+def test_explicit_witness_sync_recovers_interrupted_append(store, a7_key):
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    witness.fail_next = True
+    with pytest.raises(DissentStoreError, match="witness advancement failed"):
+        file_protected_dissent(
+            witnessed, a7_key, dissent_id="D-RETRY", target="prod", reason="interrupted witness call"
+        )
+
+    # The local transaction committed, but the remote witness did not. Authorization
+    # remains HUMAN_REVIEW until the explicit operator reconciliation succeeds.
+    assert witness.seq == 0
+    assert decide(witnessed).decision is Decision.HUMAN_REVIEW
+    count, head = witnessed.sync_witness()
+    assert count == 1
+    assert head == witness.head_hash
+    assert witnessed.head() == (1, head)
+
+
+def test_existing_chain_requires_human_signed_witness_bootstrap(store, a7_key, human_key):
+    import base64
+
+    file(store, a7_key, dissent_id="D-BOOTSTRAP", target="prod", reason="existing chain")
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    payload = witnessed.create_witness_bootstrap_payload(
+        human="theodore", reason="approve enrollment of the verified existing chain",
+        ts="2026-11-28T06:00:00Z",
+    )
+    signature = sign_b64(human_key, payload)
+    count, head = witnessed.bootstrap_witness(
+        payload_b64=base64.b64encode(payload).decode("ascii"),
+        signature_b64=signature,
+    )
+    assert count == 1
+    assert witness.seq == 1
+    assert witnessed.head() == (1, head)
+
+
+def test_existing_chain_bootstrap_rejects_invalid_human_signature(store, a7_key, human_key):
+    import base64
+
+    file(store, a7_key, dissent_id="D-BOOTSTRAP-BAD", target="prod", reason="existing chain")
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    payload = witnessed.create_witness_bootstrap_payload(
+        human="theodore", reason="approve enrollment", ts="2026-11-28T06:00:00Z",
+    )
+    wrong_key = Ed25519PrivateKey.generate()
+    with pytest.raises(DissentWriteRejected, match="bootstrap signature"):
+        witnessed.bootstrap_witness(
+            payload_b64=base64.b64encode(payload).decode("ascii"),
+            signature_b64=sign_b64(wrong_key, payload),
+        )
+    assert witness.seq == 0
+
+
+def test_required_witness_also_requires_the_dissent_store(monkeypatch):
+    monkeypatch.setenv("SENTINEL_REQUIRE_DISSENT_WITNESS", "1")
+    monkeypatch.delenv("SENTINEL_REQUIRE_DISSENT_STORE", raising=False)
+    monkeypatch.delenv("SENTINEL_DISSENT_DB", raising=False)
+    result = Sentinel().authorize(req())
+    assert result.decision is Decision.HUMAN_REVIEW
+    assert "dissent store required" in result.reason

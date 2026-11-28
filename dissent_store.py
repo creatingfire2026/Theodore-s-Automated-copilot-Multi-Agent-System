@@ -33,12 +33,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from aip001_council import may_file_protected_dissent
+from dissent_witness import HttpDissentWitness
 
 GENESIS_HASH = "0" * 64
 ENV_DB = "SENTINEL_DISSENT_DB"
 ENV_PUBKEY = "SENTINEL_HUMAN_PUBKEY"
 ENV_A7_PUBKEY = "SENTINEL_A7_PUBKEY"
 ENV_ANCHOR = "SENTINEL_DISSENT_ANCHOR"
+ENV_WITNESS_URL = "SENTINEL_DISSENT_WITNESS_URL"
+ENV_WITNESS_PUBKEY = "SENTINEL_DISSENT_WITNESS_PUBKEY"
+ENV_WITNESS_TOKEN = "SENTINEL_DISSENT_WITNESS_TOKEN"
+ENV_REQUIRE_WITNESS = "SENTINEL_REQUIRE_DISSENT_WITNESS"
 ANCHOR_SIGNERS = ("A7", "human")
 REQUIRED_TRIGGERS = frozenset({"dissent_log_no_update", "dissent_log_no_delete"})
 ROW_FIELDS = ("seq", "kind", "dissent_id", "target", "reason", "author", "ts", "dissent_row_hash", "signature")
@@ -138,6 +143,13 @@ def anchor_payload(count: int, head_hash: str, ts: str, signer: str) -> bytes:
     return _canonical({"kind": "anchor", "count": count, "head_hash": head_hash, "ts": ts, "signer": signer})
 
 
+def witness_bootstrap_payload(seq: int, head_hash: str, human: str, reason: str, ts: str) -> bytes:
+    return _canonical({
+        "kind": "witness-bootstrap", "seq": seq, "head_hash": head_hash,
+        "human": human, "reason": reason, "ts": ts,
+    })
+
+
 def sign_b64(private_key, payload: bytes) -> str:
     return base64.b64encode(private_key.sign(payload)).decode("ascii")
 
@@ -225,11 +237,32 @@ def _write_private_file(path: Path, data: bytes) -> None:
 
 
 class DissentStore:
-    def __init__(self, path, human_pubkey_path, a7_pubkey_path=None, anchor_path=None) -> None:
+    def __init__(self, path, human_pubkey_path, a7_pubkey_path=None, anchor_path=None,
+                 *, witness=None, require_witness: bool | None = None) -> None:
         self.path = Path(path)
         self.human_pubkey_path = Path(human_pubkey_path) if human_pubkey_path else None
         self.a7_pubkey_path = Path(a7_pubkey_path) if a7_pubkey_path else None
         self.anchor_path = Path(anchor_path) if anchor_path else None
+        self._witness_config_error = None
+        if witness is None:
+            witness_url = os.environ.get(ENV_WITNESS_URL)
+            witness_pubkey = os.environ.get(ENV_WITNESS_PUBKEY)
+            witness_token = os.environ.get(ENV_WITNESS_TOKEN)
+            configured = (bool(witness_url), bool(witness_pubkey), bool(witness_token))
+            if any(configured) and not all(configured):
+                self._witness_config_error = (
+                    f"{ENV_WITNESS_URL}, {ENV_WITNESS_PUBKEY}, and {ENV_WITNESS_TOKEN} "
+                    "must be configured together"
+                )
+            elif all(configured):
+                try:
+                    witness = HttpDissentWitness(witness_url, witness_pubkey, witness_token)
+                except Exception as exc:  # noqa: BLE001 - witness configuration must fail closed
+                    self._witness_config_error = f"witness configuration invalid: {exc.__class__.__name__}"
+        self.witness = witness
+        if require_witness is None:
+            require_witness = os.environ.get(ENV_REQUIRE_WITNESS, "") == "1"
+        self.require_witness = bool(require_witness)
 
     @classmethod
     def from_env(cls) -> "DissentStore | None":
@@ -325,18 +358,22 @@ class DissentStore:
         except sqlite3.Error as exc:
             raise DissentStoreError(f"dissent store unreadable: {exc}") from None
 
-    def _read_verified(self, conn: sqlite3.Connection, keys: dict | None = None) -> list[dict]:
-        """All rows after verifying triggers, chain, every signature, and the head anchor."""
+    def _read_verified(self, conn: sqlite3.Connection, keys: dict | None = None,
+                       *, check_witness: bool = True) -> list[dict]:
+        """Verify triggers, chain, signatures, local anchor, and optionally the remote witness."""
         keys = keys or self._keys()
         rows = self._rows(conn)
         prev = GENESIS_HASH
         dissents: dict[str, dict] = {}
+        cleared_hashes: set[str] = set()
         for expected_seq, row in enumerate(rows, start=1):
             if row["seq"] != expected_seq:
                 raise DissentStoreError(f"chain gap at seq {expected_seq} (row deleted or reordered)")
             if row["prev_hash"] != prev or compute_row_hash(row, prev) != row["row_hash"]:
                 raise DissentStoreError(f"hash chain broken at seq {row['seq']}")
             if row["kind"] == "dissent":
+                if row["dissent_id"] in dissents:
+                    raise DissentStoreError(f"duplicate dissent ID at seq {row['seq']}")
                 if not may_file_protected_dissent(row["author"]):
                     raise DissentStoreError(f"dissent seq {row['seq']} not authored by A7")
                 payload = dissent_payload(row["dissent_id"], row["target"], row["reason"], row["author"], row["ts"])
@@ -347,6 +384,9 @@ class DissentStore:
                 target = dissents.get(row["dissent_id"])
                 if target is None or target["row_hash"] != row["dissent_row_hash"]:
                     raise DissentStoreError(f"receipt seq {row['seq']} references no earlier dissent")
+                if row["dissent_row_hash"] in cleared_hashes:
+                    raise DissentStoreError(f"duplicate receipt for dissent row at seq {row['seq']}")
+                cleared_hashes.add(row["dissent_row_hash"])
                 payload = receipt_payload(row["dissent_id"], row["dissent_row_hash"], row["target"],
                                           row["reason"], row["author"], row["ts"])
                 if not _verify(keys["human"], row["signature"], payload):
@@ -360,7 +400,136 @@ class DissentStore:
         actual = rows[anchored_count - 1]["row_hash"] if anchored_count else GENESIS_HASH
         if actual != anchored_head:
             raise DissentStoreError(f"store diverges from signed head anchor at row {anchored_count} (rewritten)")
+        latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        if check_witness:
+            self._check_witness(len(rows), latest_head)
         return rows
+
+    def create_witness_bootstrap_payload(self, *, human: str, reason: str, ts: str | None = None) -> bytes:
+        """Create a payload for the human to sign when enrolling an existing verified chain."""
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        if not human or not reason or not reason.strip():
+            raise DissentWriteRejected("bootstrap requires a human identity and non-empty reason")
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
+        if checkpoint["seq"] != 0 or checkpoint["head_hash"] != GENESIS_HASH:
+            raise DissentStoreError("witness is not at genesis; refusing bootstrap")
+        head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        return witness_bootstrap_payload(len(rows), head, human, reason, ts or now_ts())
+
+    def bootstrap_witness(self, *, payload_b64: str, signature_b64: str) -> tuple[int, str]:
+        """Enroll the exact locally verified chain using an offline human signature."""
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        try:
+            payload_bytes = base64.b64decode(payload_b64, validate=True)
+            payload = json.loads(payload_bytes.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, TypeError):
+            raise DissentWriteRejected("bootstrap payload is not valid base64 JSON") from None
+        expected = {"kind", "seq", "head_hash", "human", "reason", "ts"}
+        if not isinstance(payload, dict) or set(payload) != expected or payload_bytes != _canonical(payload):
+            raise DissentWriteRejected("bootstrap payload is not canonical or has unexpected fields")
+        if (payload["kind"] != "witness-bootstrap" or not isinstance(payload["seq"], int)
+                or isinstance(payload["seq"], bool) or not all(isinstance(payload[k], str) for k in
+                ("head_hash", "human", "reason", "ts")) or not payload["human"] or not payload["reason"].strip()):
+            raise DissentWriteRejected("bootstrap payload fields are invalid")
+
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        if payload["seq"] != len(rows) or payload["head_hash"] != head:
+            raise DissentWriteRejected("human-signed bootstrap payload does not match the current local chain")
+        if not _verify(self._keys()["human"], signature_b64, payload_bytes):
+            raise DissentWriteRejected("bootstrap signature does not verify against the human public key")
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
+        if checkpoint["seq"] != 0 or checkpoint["head_hash"] != GENESIS_HASH:
+            raise DissentStoreError("witness is not at genesis; refusing bootstrap")
+        try:
+            self.witness.bootstrap(rows, payload, signature_b64)
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"independent witness bootstrap failed: {exc.__class__.__name__}") from None
+        self._check_witness(len(rows), head)
+        return len(rows), head
+
+    def sync_witness(self) -> tuple[int, str]:
+        """Explicitly replay a locally valid suffix when a prior append committed but its witness call failed.
+
+        This cannot repair rollback: the remote checkpoint must be an exact ancestor
+        of the local verified chain. A remote-ahead or divergent state is rejected.
+        """
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001 - recovery must not bypass witness availability
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
+        remote_seq = checkpoint["seq"]
+        if remote_seq > len(rows):
+            raise DissentStoreError("witness is ahead of the local store; rollback or data loss suspected")
+        local_prefix = rows[remote_seq - 1]["row_hash"] if remote_seq else GENESIS_HASH
+        if checkpoint["head_hash"] != local_prefix:
+            raise DissentStoreError("local chain diverges from the independent witness; refusing reconciliation")
+        for row in rows[remote_seq:]:
+            try:
+                self.witness.advance(row)
+            except Exception as exc:  # noqa: BLE001
+                raise DissentStoreError(f"witness reconciliation stopped: {exc.__class__.__name__}") from None
+        latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        self._check_witness(len(rows), latest_head)
+        return len(rows), latest_head
+
+    def _check_witness(self, seq: int, head_hash: str) -> None:
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            if self.require_witness:
+                raise DissentStoreError("independent dissent witness required but not configured")
+            return
+        try:
+            self.witness.assert_matches(seq, head_hash)
+        except DissentStoreError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - unavailable or malformed witness must fail closed
+            raise DissentStoreError(f"independent dissent witness failed: {exc.__class__.__name__}") from None
+
+    def _advance_witness(self, row: dict) -> None:
+        self._check_witness(row["seq"] - 1, row["prev_hash"])
+        if self.witness is None:
+            return
+        try:
+            self.witness.advance(row)
+            self._check_witness(row["seq"], row["row_hash"])
+        except DissentStoreError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - never report an unwitnessed append as complete
+            raise DissentStoreError(
+                f"local dissent append committed but witness advancement failed: {exc.__class__.__name__}"
+            ) from None
 
     def _append(self, row: dict, anchor_signer) -> str:
         keys = self._keys()
@@ -380,10 +549,19 @@ class DissentStore:
                 " dissent_row_hash, signature, prev_hash, row_hash) VALUES"
                 " (:seq, :kind, :dissent_id, :target, :reason, :author, :ts, :dissent_row_hash,"
                 " :signature, :prev_hash, :row_hash)", row)
-            conn.execute("COMMIT")
-            # Anchor written while the db write lock is released but before returning;
-            # a crash here leaves the anchor one step behind, which still verifies (store extends it).
+            # Advance the signed anchor while BEGIN IMMEDIATE still holds the SQLite
+            # writer lock. A second writer cannot commit a later row and then have
+            # this writer overwrite its newer anchor with a stale one.
+            #
+            # Crash safety is fail-closed: a crash after the anchor write but before
+            # COMMIT leaves the anchor ahead of the database, so readers reject the
+            # store and require operator recovery rather than authorizing stale state.
             self._write_anchor(row["seq"], row["row_hash"], anchor_signer)
+            conn.execute("COMMIT")
+            # The remote monotonic witness is advanced only after the local row and
+            # signed anchor commit. If this call fails, the local store is ahead and
+            # every subsequent authorization fails closed until operator recovery.
+            self._advance_witness(row)
             return row["row_hash"]
         except sqlite3.IntegrityError as exc:
             if conn.in_transaction:
@@ -447,8 +625,9 @@ class DissentStore:
     def open_dissents(self) -> list[Dissent]:
         """Dissents with no valid later receipt. Raises DissentStoreError on any integrity problem."""
         rows = self._verified_rows()
-        cleared = {r["dissent_id"] for r in rows if r["kind"] == "receipt"}
-        return [self._as_dissent(r) for r in rows if r["kind"] == "dissent" and r["dissent_id"] not in cleared]
+        cleared = {r["dissent_row_hash"] for r in rows if r["kind"] == "receipt"}
+        return [self._as_dissent(r) for r in rows
+                if r["kind"] == "dissent" and r["row_hash"] not in cleared]
 
     def known_dissent_ids(self) -> set[str]:
         return {r["dissent_id"] for r in self._verified_rows() if r["kind"] == "dissent"}

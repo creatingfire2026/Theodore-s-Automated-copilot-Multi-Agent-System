@@ -1,0 +1,12 @@
+name = "sentinel-dissent-witness"
+main = "cloudflare/dissent-witness/worker.mjs"
+compatibility_date = "2026-11-28"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "DISSENT_WITNESS"
+class_name = "DissentWitness"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DissentWitness"]
