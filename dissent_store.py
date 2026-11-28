@@ -42,6 +42,7 @@ ENV_A7_PUBKEY = "SENTINEL_A7_PUBKEY"
 ENV_ANCHOR = "SENTINEL_DISSENT_ANCHOR"
 ENV_WITNESS_URL = "SENTINEL_DISSENT_WITNESS_URL"
 ENV_WITNESS_PUBKEY = "SENTINEL_DISSENT_WITNESS_PUBKEY"
+ENV_WITNESS_TOKEN = "SENTINEL_DISSENT_WITNESS_TOKEN"
 ENV_REQUIRE_WITNESS = "SENTINEL_REQUIRE_DISSENT_WITNESS"
 ANCHOR_SIGNERS = ("A7", "human")
 REQUIRED_TRIGGERS = frozenset({"dissent_log_no_update", "dissent_log_no_delete"})
@@ -246,11 +247,16 @@ class DissentStore:
         if witness is None:
             witness_url = os.environ.get(ENV_WITNESS_URL)
             witness_pubkey = os.environ.get(ENV_WITNESS_PUBKEY)
-            if bool(witness_url) != bool(witness_pubkey):
-                self._witness_config_error = f"{ENV_WITNESS_URL} and {ENV_WITNESS_PUBKEY} must be configured together"
-            elif witness_url and witness_pubkey:
+            witness_token = os.environ.get(ENV_WITNESS_TOKEN)
+            configured = (bool(witness_url), bool(witness_pubkey), bool(witness_token))
+            if any(configured) and not all(configured):
+                self._witness_config_error = (
+                    f"{ENV_WITNESS_URL}, {ENV_WITNESS_PUBKEY}, and {ENV_WITNESS_TOKEN} "
+                    "must be configured together"
+                )
+            elif all(configured):
                 try:
-                    witness = HttpDissentWitness(witness_url, witness_pubkey)
+                    witness = HttpDissentWitness(witness_url, witness_pubkey, witness_token)
                 except Exception as exc:  # noqa: BLE001 - witness configuration must fail closed
                     self._witness_config_error = f"witness configuration invalid: {exc.__class__.__name__}"
         self.witness = witness
