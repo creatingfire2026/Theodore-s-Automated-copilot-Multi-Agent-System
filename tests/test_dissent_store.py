@@ -738,6 +738,13 @@ class FakeMonotonicWitness:
     def checkpoint(self):
         return {"seq": self.seq, "head_hash": self.head_hash}
 
+    def bootstrap(self, rows, payload, signature_b64):
+        if self.seq != 0 or self.head_hash != GENESIS_HASH:
+            raise DissentStoreError("witness already initialized")
+        self.seq = payload["seq"]
+        self.head_hash = payload["head_hash"]
+        return self.checkpoint()
+
     def assert_matches(self, seq, head_hash):
         if (seq, head_hash) != (self.seq, self.head_hash):
             raise DissentStoreError("local state differs from independent witness")
@@ -809,3 +816,47 @@ def test_explicit_witness_sync_recovers_interrupted_append(store, a7_key):
     assert count == 1
     assert head == witness.head_hash
     assert witnessed.head() == (1, head)
+
+
+def test_existing_chain_requires_human_signed_witness_bootstrap(store, a7_key, human_key):
+    import base64
+
+    file(store, a7_key, dissent_id="D-BOOTSTRAP", target="prod", reason="existing chain")
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    payload = witnessed.create_witness_bootstrap_payload(
+        human="theodore", reason="approve enrollment of the verified existing chain",
+        ts="2026-11-28T06:00:00Z",
+    )
+    signature = sign_b64(human_key, payload)
+    count, head = witnessed.bootstrap_witness(
+        payload_b64=base64.b64encode(payload).decode("ascii"),
+        signature_b64=signature,
+    )
+    assert count == 1
+    assert witness.seq == 1
+    assert witnessed.head() == (1, head)
+
+
+def test_existing_chain_bootstrap_rejects_invalid_human_signature(store, a7_key, human_key):
+    import base64
+
+    file(store, a7_key, dissent_id="D-BOOTSTRAP-BAD", target="prod", reason="existing chain")
+    witness = FakeMonotonicWitness()
+    witnessed = DissentStore(
+        store.path, store.human_pubkey_path, store.a7_pubkey_path, store.anchor_path,
+        witness=witness, require_witness=True,
+    )
+    payload = witnessed.create_witness_bootstrap_payload(
+        human="theodore", reason="approve enrollment", ts="2026-11-28T06:00:00Z",
+    )
+    wrong_key = Ed25519PrivateKey.generate()
+    with pytest.raises(DissentWriteRejected, match="bootstrap signature"):
+        witnessed.bootstrap_witness(
+            payload_b64=base64.b64encode(payload).decode("ascii"),
+            signature_b64=sign_b64(wrong_key, payload),
+        )
+    assert witness.seq == 0
