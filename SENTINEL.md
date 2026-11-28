@@ -107,11 +107,13 @@ Sentinel no longer relies on the caller to report a protected A7 dissent. Every
   A7 or human signature, truncation, rewrite, missing/invalid anchor, or missing
   key configuration all yield `HUMAN_REVIEW`, never `AUTHORIZED`.
 
-**Production setting:** `SENTINEL_REQUIRE_DISSENT_STORE=1` (with
-`SENTINEL_DISSENT_DB`, `SENTINEL_DISSENT_ANCHOR`, `SENTINEL_HUMAN_PUBKEY`,
-`SENTINEL_A7_PUBKEY`, and for writers `SENTINEL_A7_KEY`). Without it and without a
-configured store, Sentinel keeps the legacy caller-hint behavior (kept only so
-library/unit use stays opt-in).
+**Production settings:** enable both `SENTINEL_REQUIRE_DISSENT_STORE=1` and
+`SENTINEL_REQUIRE_DISSENT_WITNESS=1`, with `SENTINEL_DISSENT_DB`,
+`SENTINEL_DISSENT_ANCHOR`, `SENTINEL_HUMAN_PUBKEY`, `SENTINEL_A7_PUBKEY`,
+`SENTINEL_DISSENT_WITNESS_URL`, `SENTINEL_DISSENT_WITNESS_PUBKEY`, and the
+Sentinel-only `SENTINEL_DISSENT_WITNESS_TOKEN`. Writers also need
+`SENTINEL_A7_KEY`. Setting witness-required automatically makes the dissent store
+required; there is no legacy fallback when the store or witness is missing.
 
 Known limits: restoring an older database together with its older anchor file
 (a consistent rollback) is not detected; whoever holds a private key can sign
