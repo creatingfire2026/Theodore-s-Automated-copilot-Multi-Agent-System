@@ -162,19 +162,28 @@ SENTINEL_REQUIRE_DISSENT_WITNESS=1
 1. Generate the dedicated witness keypair:
    `python dissent_witness_keygen.py --private-out /secure/witness-private.pkcs8.b64 --public-out /secure/witness-public.pem`.
    The private file is mode `0600`; keep it off the Sentinel host and away from A7.
-2. From the repository root, upload the private key only to Cloudflare and configure
-   the two row-verification public keys:
+2. Create a separate writer credential. Store it in a 0600 file available only to
+   the Sentinel service account; do not expose it to A7:
+   ```sh
+   openssl rand -hex 32 > /secure/witness-advance-token
+   chmod 600 /secure/witness-advance-token
+   npx wrangler secret put WITNESS_ADVANCE_TOKEN < /secure/witness-advance-token
+   ```
+3. From the repository root, upload the witness private key only to Cloudflare and
+   configure the two row-verification public keys:
    ```sh
    npx wrangler secret put WITNESS_PRIVATE_KEY_PKCS8_B64 < /secure/witness-private.pkcs8.b64
    python dissent_cli.py pubkey-info --role a7 | sed -n 's/^raw_b64=//p' | npx wrangler secret put A7_PUBLIC_KEY_RAW_B64
    python dissent_cli.py pubkey-info --role human | sed -n 's/^raw_b64=//p' | npx wrangler secret put HUMAN_PUBLIC_KEY_RAW_B64
    ```
-3. Deploy with `npx wrangler deploy`. The Durable Object migration is declared
+4. Deploy with `npx wrangler deploy`. The Durable Object migration is declared
    in `wrangler.toml`; record the Worker URL printed by Wrangler.
-4. Install `/secure/witness-public.pem` on the Sentinel host and set
-   `SENTINEL_DISSENT_WITNESS_URL` to the deployed Worker URL and
-   `SENTINEL_DISSENT_WITNESS_PUBKEY` to that PEM path. Verify a signed genesis
-   checkpoint before enabling `SENTINEL_REQUIRE_DISSENT_WITNESS=1`.
+5. Install the witness public PEM and the writer-token file on the Sentinel host.
+   Set `SENTINEL_DISSENT_WITNESS_URL`, `SENTINEL_DISSENT_WITNESS_PUBKEY`,
+   `SENTINEL_DISSENT_WITNESS_TOKEN`, and finally
+   `SENTINEL_REQUIRE_DISSENT_WITNESS=1` only after the genesis/bootstrapped
+   checkpoint has been verified. The token authorizes POST advancement and must
+   remain unavailable to A7; the public checkpoint GET is signature-verified.
 
 The witness key is not installed on Sentinel or A7. The Worker verifies existing
 A7/human row signatures; it does not grant A7 the ability to sign witness checkpoints.
