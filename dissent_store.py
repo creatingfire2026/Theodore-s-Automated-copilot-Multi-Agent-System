@@ -407,7 +407,10 @@ class DissentStore:
             rows = self._read_verified(conn, check_witness=False)
         finally:
             conn.close()
-        checkpoint = self.witness.checkpoint()
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001 - recovery must not bypass witness availability
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
         remote_seq = checkpoint["seq"]
         if remote_seq > len(rows):
             raise DissentStoreError("witness is ahead of the local store; rollback or data loss suspected")
@@ -415,7 +418,10 @@ class DissentStore:
         if checkpoint["head_hash"] != local_prefix:
             raise DissentStoreError("local chain diverges from the independent witness; refusing reconciliation")
         for row in rows[remote_seq:]:
-            self.witness.advance(row)
+            try:
+                self.witness.advance(row)
+            except Exception as exc:  # noqa: BLE001
+                raise DissentStoreError(f"witness reconciliation stopped: {exc.__class__.__name__}") from None
         latest_head = rows[-1]["row_hash"] if rows else GENESIS_HASH
         self._check_witness(len(rows), latest_head)
         return len(rows), latest_head
