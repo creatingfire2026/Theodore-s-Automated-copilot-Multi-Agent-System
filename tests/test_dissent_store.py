@@ -742,7 +742,7 @@ class FakeMonotonicWitness:
     def advance(self, row):
         if self.fail_next:
             self.fail_next = False
-            raise DissentStoreError("simulated witness transport failure")
+            raise RuntimeError("simulated witness transport failure")
         if row["seq"] == self.seq and row["row_hash"] == self.head_hash:
             return {"seq": self.seq, "head_hash": self.head_hash}
         if row["seq"] != self.seq + 1 or row["prev_hash"] != self.head_hash:
