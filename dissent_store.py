@@ -142,6 +142,13 @@ def anchor_payload(count: int, head_hash: str, ts: str, signer: str) -> bytes:
     return _canonical({"kind": "anchor", "count": count, "head_hash": head_hash, "ts": ts, "signer": signer})
 
 
+def witness_bootstrap_payload(seq: int, head_hash: str, human: str, reason: str, ts: str) -> bytes:
+    return _canonical({
+        "kind": "witness-bootstrap", "seq": seq, "head_hash": head_hash,
+        "human": human, "reason": reason, "ts": ts,
+    })
+
+
 def sign_b64(private_key, payload: bytes) -> str:
     return base64.b64encode(private_key.sign(payload)).decode("ascii")
 
@@ -391,6 +398,70 @@ class DissentStore:
         if check_witness:
             self._check_witness(len(rows), latest_head)
         return rows
+
+    def create_witness_bootstrap_payload(self, *, human: str, reason: str, ts: str | None = None) -> bytes:
+        """Create a payload for the human to sign when enrolling an existing verified chain."""
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        if not human or not reason or not reason.strip():
+            raise DissentWriteRejected("bootstrap requires a human identity and non-empty reason")
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
+        if checkpoint["seq"] != 0 or checkpoint["head_hash"] != GENESIS_HASH:
+            raise DissentStoreError("witness is not at genesis; refusing bootstrap")
+        head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        return witness_bootstrap_payload(len(rows), head, human, reason, ts or now_ts())
+
+    def bootstrap_witness(self, *, payload_b64: str, signature_b64: str) -> tuple[int, str]:
+        """Enroll the exact locally verified chain using an offline human signature."""
+        if self._witness_config_error:
+            raise DissentStoreError(self._witness_config_error)
+        if self.witness is None:
+            raise DissentStoreError("independent dissent witness is not configured")
+        try:
+            payload_bytes = base64.b64decode(payload_b64, validate=True)
+            payload = json.loads(payload_bytes.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, TypeError):
+            raise DissentWriteRejected("bootstrap payload is not valid base64 JSON") from None
+        expected = {"kind", "seq", "head_hash", "human", "reason", "ts"}
+        if not isinstance(payload, dict) or set(payload) != expected or payload_bytes != _canonical(payload):
+            raise DissentWriteRejected("bootstrap payload is not canonical or has unexpected fields")
+        if (payload["kind"] != "witness-bootstrap" or not isinstance(payload["seq"], int)
+                or isinstance(payload["seq"], bool) or not all(isinstance(payload[k], str) for k in
+                ("head_hash", "human", "reason", "ts")) or not payload["human"] or not payload["reason"].strip()):
+            raise DissentWriteRejected("bootstrap payload fields are invalid")
+
+        conn = self._connect_ro()
+        try:
+            rows = self._read_verified(conn, check_witness=False)
+        finally:
+            conn.close()
+        head = rows[-1]["row_hash"] if rows else GENESIS_HASH
+        if payload["seq"] != len(rows) or payload["head_hash"] != head:
+            raise DissentWriteRejected("human-signed bootstrap payload does not match the current local chain")
+        if not _verify(self._keys()["human"], signature_b64, payload_bytes):
+            raise DissentWriteRejected("bootstrap signature does not verify against the human public key")
+        try:
+            checkpoint = self.witness.checkpoint()
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"cannot read independent witness: {exc.__class__.__name__}") from None
+        if checkpoint["seq"] != 0 or checkpoint["head_hash"] != GENESIS_HASH:
+            raise DissentStoreError("witness is not at genesis; refusing bootstrap")
+        try:
+            self.witness.bootstrap(rows, payload, signature_b64)
+        except Exception as exc:  # noqa: BLE001
+            raise DissentStoreError(f"independent witness bootstrap failed: {exc.__class__.__name__}") from None
+        self._check_witness(len(rows), head)
+        return len(rows), head
 
     def sync_witness(self) -> tuple[int, str]:
         """Explicitly replay a locally valid suffix when a prior append committed but its witness call failed.
