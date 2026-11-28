@@ -146,9 +146,15 @@ def _add(args) -> int:
 def _status(args) -> int:
     store = _store(args)
     count, head = store.head()
-    print(f"chain, signatures and anchor OK: {count} rows, head={head}")
+    print(f"chain, signatures, local anchor and independent witness OK: {count} rows, head={head}")
     for d in store.open_dissents():
         print(f"OPEN {d.dissent_id} target={d.target!r} by {d.author} at {d.ts}: {d.reason}")
+    return 0
+
+
+def _witness_sync(args) -> int:
+    count, head = _store(args).sync_witness()
+    print(f"independent witness reconciled to verified local chain: {count} rows, head={head}")
     return 0
 
 
@@ -261,6 +267,7 @@ def main(argv=None) -> int:
     pi.add_argument("--role", choices=("human", "a7"), default="human")
     pi.set_defaults(fn=_pubkey_info)
     for name, fn in (("init", _init), ("add-dissent", _add), ("status", _status),
+                     ("witness-sync", _witness_sync),
                      ("receipt-payload", _receipt_payload), ("clear", _clear)):
         p = sub.add_parser(name)
         p.add_argument("--db")
